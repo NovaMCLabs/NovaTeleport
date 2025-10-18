@@ -297,17 +297,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         World world = p.getWorld();
-        int radius = plugin.getConfig().getInt("rtp.radius", 2000);
-        int tries = plugin.getConfig().getInt("rtp.tries", 20);
-        Random rnd = new Random();
-        Location dest = null;
-        for (int i = 0; i < tries; i++) {
-            double x = rnd.nextDouble() * radius * (rnd.nextBoolean()?1:-1);
-            double z = rnd.nextDouble() * radius * (rnd.nextBoolean()?1:-1);
-            Location test = new Location(world, x, world.getHighestBlockYAt((int) x, (int) z) + 1, z);
-            Material feet = test.clone().add(0, -1, 0).getBlock().getType();
-            if (!feet.isAir() && feet.isSolid()) { dest = test; break; }
-        }
+        Location dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random());
         if (dest == null) { p.sendMessage(plugin.getLang().t("rtp.no_safe")); return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);

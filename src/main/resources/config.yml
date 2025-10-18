@@ -30,7 +30,41 @@ homes:
 # 随机传送配置
 rtp:
   radius: 2000
-  tries: 20
+  tries: 30
+  center:
+    x: 0
+    z: 0
+  min_y: -64
+  max_y: 319
+  avoid:
+    water: true
+    lava: true
+    leaves: true
+    cactus: true
+    fire: true
+    campfire: true
+    magma: true
+    powder_snow: true
+  worlds:
+    world:
+      radius: 3000
+      center:
+        x: 0
+        z: 0
+    nether:
+      radius: 1500
+      min_y: 30
+      max_y: 120
+      center:
+        x: 0
+        z: 0
+    the_end:
+      radius: 2000
+      min_y: 40
+      max_y: 200
+      center:
+        x: 0
+        z: 0
 
 # 传送动画与落地效果开关
 features:
