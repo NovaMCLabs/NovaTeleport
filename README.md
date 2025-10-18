@@ -1,6 +1,6 @@
 [**English - EN**] | [[**简体中文 - CN**](README_CN.md)]
 
-### StarTeleport  
+### NovaTeleport
 
 **Plugin Description**
 This plugin teleports players to a specific world when they reach a designated altitude. The teleportation process includes the following mechanisms:

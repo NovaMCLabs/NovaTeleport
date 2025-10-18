@@ -58,7 +58,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         loadConfig();
         getServer().getPluginManager().registerEvents(this, this);
         getCommand("stp").setExecutor(this);
-        getLogger().info("[XingLingQAQ]StarTeleport——已成功启动！");
+        getLogger().info("NovaTeleport——已成功启动！");
     }
 
     @Override
@@ -68,7 +68,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         taskMap.clear();
         canTriggerMap.clear();
         originalLocations.clear();
-        getLogger().info("[XingLingQAQ]StarTeleport——已成功卸载！");
+        getLogger().info("NovaTeleport——已成功卸载！");
     }
     
     /**
