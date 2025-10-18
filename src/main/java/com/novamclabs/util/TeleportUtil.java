@@ -29,6 +29,11 @@ public class TeleportUtil {
         return cfg;
     }
 
+    // 暴露给其他类使用语言系统
+    public static com.novamclabs.lang.LanguageManager getLang(StarTeleport plugin) {
+        return plugin.getLang();
+    }
+
     public static void applyPostEffect(Player p, PostEffectConfig cfg) {
         if (cfg.enabled && cfg.type != null) {
             p.addPotionEffect(new PotionEffect(cfg.type, cfg.durationSeconds * 20, cfg.amplifier, true, true, true));
@@ -64,7 +69,8 @@ public class TeleportUtil {
                     return;
                 }
                 // 倒计时行动条，避免Title闪烁
-                player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent("§e启明传送中 §7| §f剩余 §a" + remaining + "§f 秒"));
+                String ab = plugin.getLang().tr("teleport.actionbar.countdown", "seconds", remaining);
+                player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(ab));
 
                 if (animation) {
                     // 旋转法阵 + 符文粒子

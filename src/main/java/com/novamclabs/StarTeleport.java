@@ -20,6 +20,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private boolean debug;
     private int teleportDelay;
     private com.novamclabs.storage.DataStore dataStore;
+    private com.novamclabs.lang.LanguageManager lang;
     // 使用 ConcurrentHashMap 来避免并发问题
     private final Map<Player, BukkitTask> taskMap = new ConcurrentHashMap<>();
     // 记录玩家是否可以触发传送（用于控制重复触发）
@@ -40,13 +41,13 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         }
         
         if (!sender.hasPermission("novateleport.command.reload")) {
-            sender.sendMessage("§c你没有权限执行此命令！");
+            sender.sendMessage(lang.t("command.no_permission"));
             return true;
         }
         
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             reloadPluginConfig();
-            sender.sendMessage("§a配置已成功重载！");
+            sender.sendMessage(lang.t("command.reload.success"));
             return true;
         }
         
@@ -56,6 +57,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        // 初始化语言系统
+        this.lang = new com.novamclabs.lang.LanguageManager(this);
+        this.lang.ensureDefaults("zh_CN","en_US");
         // 初始化数据存储
         this.dataStore = new com.novamclabs.storage.DataStore(getDataFolder());
         loadConfig();
@@ -70,7 +74,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
                 getCommand(c).setTabCompleter(handler);
             }
         }
-        getLogger().info("NovaTeleport——已成功启动！");
+        getLogger().info(lang.t("plugin.startup"));
     }
 
     @Override
@@ -80,7 +84,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         taskMap.clear();
         canTriggerMap.clear();
         originalLocations.clear();
-        getLogger().info("NovaTeleport——已成功卸载！");
+        getLogger().info(lang.t("plugin.shutdown"));
     }
     
     /**
@@ -88,6 +92,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
      */
     private void reloadPluginConfig() {
         reloadConfig();
+        // 重载语言
+        String lc = getConfig().getString("language", "zh_CN");
+        if (this.lang != null) this.lang.load(lc);
         loadConfig();
     }
     
@@ -95,11 +102,14 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
      * 加载配置文件
      */
     private void loadConfig() {
+        // 语言
+        String lc = getConfig().getString("language", "zh_CN");
+        if (this.lang != null) this.lang.load(lc);
         debug = getConfig().getBoolean(CONFIG_DEBUG, false);
         teleportDelay = getConfig().getInt(CONFIG_DELAY, 5);
         if (debug) {
-            getLogger().info("Debug 模式已启用");
-            getLogger().info("传送延迟设置为: " + teleportDelay + "秒");
+            getLogger().info(lang.t("debug.enabled"));
+            getLogger().info(lang.tr("debug.delay", "seconds", teleportDelay));
         }
     }
     
@@ -117,12 +127,12 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             if (hasMovedFullBlock(event)) {
                 cancelExistingTask(player, true);
                 if (debug) {
-                    getLogger().log(Level.INFO, "[调试] 玩家 {0} 移动超过2格，取消传送", player.getName());
+                    getLogger().log(Level.INFO, lang.tr("debug.cancel_due_to_move", "player", player.getName()));
                 }
                 return;
             }
             if (debug) {
-                getLogger().log(Level.INFO, "[调试] 玩家 {0} 移动未超过2格，继续传送", player.getName());
+                getLogger().log(Level.INFO, lang.tr("debug.continue_due_to_small_move", "player", player.getName()));
             }
             // 如果只是微小移动，继续保持传送状态
             return;
@@ -162,8 +172,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         double deltaZ = Math.abs(event.getTo().getZ() - originalLoc.getZ());
         
         if (debug) {
-            getLogger().log(Level.INFO, "[调试] 玩家 {0} 移动距离 - X: {1} 格, Z: {2} 格", 
-                new Object[]{player.getName(), String.format("%.2f", deltaX), String.format("%.2f", deltaZ)});
+            getLogger().log(Level.INFO, lang.tr("debug.move_distance", "player", player.getName(), "dx", String.format("%.2f", deltaX), "dz", String.format("%.2f", deltaZ)));
         }
         
         // 如果任一方向移动超过2格，则取消传送
@@ -188,7 +197,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         if (existingTask != null) {
             existingTask.cancel();
             if (showTitle) {
-                player.sendTitle("§c传送取消!", "", 10, 20, 10);
+                player.sendTitle(lang.t("teleport.cancelled.title"), "", 10, 20, 10);
             }
         }
         // 清除原始位置记录
@@ -251,7 +260,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             if (crossedThresholdLine) {
                 canTriggerMap.put(player, true); // 允许再次触发
                 if (debug) {
-                    getLogger().log(Level.INFO, "[调试] 玩家 {0} 穿过阈值线，允许再次触发传送", player.getName());
+                    getLogger().log(Level.INFO, lang.tr("debug.cross_threshold", "player", player.getName()));
                 }
             }
         }
@@ -263,7 +272,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private void startTeleport(Player player, TeleportRule rule) {
         World targetWorld = getServer().getWorld(rule.targetWorldName);
         if (targetWorld == null) {
-            getLogger().log(Level.WARNING, "目标世界 {0} 未正确加载！", rule.targetWorldName);
+            getLogger().log(Level.WARNING, lang.tr("warn.world_not_loaded", "world", rule.targetWorldName));
             return;
         }
 
@@ -279,16 +288,18 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         scheduleTeleport(player, targetWorld);
         
         if (debug) {
-            getLogger().log(Level.INFO, "[调试] 玩家 {0} 触发传送，目标世界：{1}，初始位置：({2}, {3}, {4})", 
-                new Object[]{player.getName(), rule.targetWorldName, 
-                    String.format("%.2f", player.getLocation().getX()),
-                    String.format("%.2f", player.getLocation().getY()),
-                    String.format("%.2f", player.getLocation().getZ())});
+            getLogger().log(Level.INFO, lang.tr("debug.trigger_teleport", "player", player.getName(), "world", rule.targetWorldName,
+                    "x", String.format("%.2f", player.getLocation().getX()),
+                    "y", String.format("%.2f", player.getLocation().getY()),
+                    "z", String.format("%.2f", player.getLocation().getZ())));
         }
     }
 
     public com.novamclabs.storage.DataStore getDataStore() {
         return dataStore;
+    }
+    public com.novamclabs.lang.LanguageManager getLang() {
+        return lang;
     }
     
     /**
@@ -301,14 +312,14 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             BukkitTask t = taskMap.remove(player);
             if (t != null) t.cancel();
             originalLocations.remove(player);
-            player.sendMessage("§a传送完成！");
+            player.sendMessage(lang.t("teleport.completed"));
         });
         if (task != null) {
             taskMap.put(player, task);
         } else {
             // 无延迟直接传送
             player.teleport(target);
-            player.sendMessage("§a传送完成！");
+            player.sendMessage(lang.t("teleport.completed"));
         }
     }
     
@@ -325,7 +336,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         originalLocations.remove(player);
         
         player.teleport(targetWorld.getSpawnLocation());
-        player.sendMessage("§a传送完成！");
+        player.sendMessage(lang.t("teleport.completed"));
     }
     
     /**

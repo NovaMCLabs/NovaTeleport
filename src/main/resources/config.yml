@@ -1,3 +1,4 @@
+language: zh_CN
 debug: false
 # 传送延迟配置(秒) - 世界阈值传送专用
 delay_seconds: 5

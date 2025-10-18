@@ -70,32 +70,36 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     }
 
     private boolean handleTpa(CommandSender sender, String[] args, boolean here) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player requester = (Player) sender;
-        if (args.length < 1) { requester.sendMessage("§e用法: /" + (here?"tpahere":"tpa") + " <玩家>"); return true; }
+        if (args.length < 1) { requester.sendMessage(plugin.getLang().t(here?"usage.tpahere":"usage.tpa")); return true; }
         Player target = Bukkit.getPlayerExact(args[0]);
-        if (target == null) { requester.sendMessage("§c玩家不在线。"); return true; }
-        if (target.getUniqueId().equals(requester.getUniqueId())) { requester.sendMessage("§c不能请求自己。"); return true; }
+        if (target == null) { requester.sendMessage(plugin.getLang().t("common.no_online_player")); return true; }
+        if (target.getUniqueId().equals(requester.getUniqueId())) { requester.sendMessage(plugin.getLang().t("common.cannot_target_self")); return true; }
 
         long expireAt = System.currentTimeMillis() + 60_000; // 60秒过期
         TpaRequest req = new TpaRequest(requester.getUniqueId(), target.getUniqueId(), here, expireAt);
         incoming.put(target.getUniqueId(), req);
         outgoing.put(requester.getUniqueId(), req);
 
-        requester.sendMessage("§a已向 §e" + target.getName() + " §a发送传送请求，60秒内有效。");
+        requester.sendMessage(plugin.getLang().tr("tpa.sent", "target", target.getName(), "seconds", 60));
         // 目标收到请求
-        target.sendMessage("§e玩家 §a" + requester.getName() + (here?" §e请求你传送到他的位置":" §e请求传送到你的位置") + "。输入 §a/tpaccept §e接受 或 §c/tpdeny §e拒绝。");
+        if (here) {
+            target.sendMessage(plugin.getLang().tr("tpa.prompt.to_here", "requester", requester.getName()));
+        } else {
+            target.sendMessage(plugin.getLang().tr("tpa.prompt.to_you", "requester", requester.getName()));
+        }
         // Bedrock 模态表单（若可用）省略：无依赖时退化为聊天提示。
         return true;
     }
 
     private boolean handleTpAccept(CommandSender sender) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player target = (Player) sender;
         TpaRequest req = incoming.get(target.getUniqueId());
-        if (req == null || req.expireAt < System.currentTimeMillis()) { target.sendMessage("§c没有有效的请求。"); return true; }
+        if (req == null || req.expireAt < System.currentTimeMillis()) { target.sendMessage(plugin.getLang().t("tpa.no_request")); return true; }
         Player requester = Bukkit.getPlayer(req.requester);
-        if (requester == null) { target.sendMessage("§c请求者已离线。"); cleanup(req); return true; }
+        if (requester == null) { target.sendMessage(plugin.getLang().t("tpa.requester_offline")); cleanup(req); return true; }
 
         // 传送对象
         Player mover = req.here ? target : requester;
@@ -104,34 +108,34 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         BukkitTask task = TeleportUtil.delayedTeleportWithAnimation(plugin, mover, dest, delay, () -> {
             cleanup(req);
-            mover.sendMessage("§a传送请求已接受，传送完成！");
+            mover.sendMessage(plugin.getLang().t("tpa.accepted.complete"));
         });
-        mover.sendMessage("§e传送请求已接受，开始传送...");
+        mover.sendMessage(plugin.getLang().t("tpa.accepted.start"));
         if (task == null) cleanup(req);
         return true;
     }
 
     private boolean handleTpDeny(CommandSender sender) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player target = (Player) sender;
         TpaRequest req = incoming.remove(target.getUniqueId());
-        if (req == null) { target.sendMessage("§c没有待处理的请求。"); return true; }
+        if (req == null) { target.sendMessage(plugin.getLang().t("tpa.none_pending")); return true; }
         Player requester = Bukkit.getPlayer(req.requester);
-        if (requester != null) requester.sendMessage("§c你的传送请求被 §e" + target.getName() + " §c拒绝。");
+        if (requester != null) requester.sendMessage(plugin.getLang().tr("tpa.denied.sender", "target", target.getName()));
         outgoing.remove(req.requester);
-        target.sendMessage("§a已拒绝传送请求。");
+        target.sendMessage(plugin.getLang().t("tpa.denied.target"));
         return true;
     }
 
     private boolean handleTpCancel(CommandSender sender) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player requester = (Player) sender;
         TpaRequest req = outgoing.remove(requester.getUniqueId());
-        if (req == null) { requester.sendMessage("§c你没有已发送的请求。"); return true; }
+        if (req == null) { requester.sendMessage(plugin.getLang().t("tpa.no_outgoing")); return true; }
         incoming.remove(req.target);
         Player target = Bukkit.getPlayer(req.target);
-        if (target != null) target.sendMessage("§e对方已取消传送请求。");
-        requester.sendMessage("§a已取消。");
+        if (target != null) target.sendMessage(plugin.getLang().t("tpa.cancelled.target"));
+        requester.sendMessage(plugin.getLang().t("tpa.cancelled.requester"));
         return true;
     }
 
@@ -142,17 +146,17 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
     // 家系统
     private boolean handleSetHome(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         String name = args.length >= 1 ? args[0] : "home";
         int limit = getHomeLimit(p);
         List<String> current = store.listHomes(p.getUniqueId());
         if (!current.contains(name.toLowerCase(Locale.ROOT)) && current.size() >= limit) {
-            p.sendMessage("§c你的家数量已达上限 (" + limit + ")。");
+            p.sendMessage(plugin.getLang().tr("homes.limit_reached", "limit", limit));
             return true;
         }
-        try { store.setHome(p.getUniqueId(), name, p.getLocation()); } catch (IOException e) { p.sendMessage("§c保存失败。"); return true; }
-        p.sendMessage("§a已设置家: §e" + name);
+        try { store.setHome(p.getUniqueId(), name, p.getLocation()); } catch (IOException e) { p.sendMessage(plugin.getLang().t("common.save_failed")); return true; }
+        p.sendMessage(plugin.getLang().tr("homes.set", "name", name));
         return true;
     }
 
@@ -170,40 +174,41 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     }
 
     private boolean handleHome(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         String name = args.length >= 1 ? args[0] : "home";
         Location loc = store.getHome(p.getUniqueId(), name);
-        if (loc == null) { p.sendMessage("§c未找到家: " + name); return true; }
+        if (loc == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage("§a欢迎回家！"));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().t("homes.welcome")));
         return true;
     }
 
     private boolean handleDelHome(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         String name = args.length >= 1 ? args[0] : "home";
-        try { store.delHome(p.getUniqueId(), name); } catch (IOException e) { p.sendMessage("§c删除失败。"); return true; }
-        p.sendMessage("§a已删除家: §e" + name);
+        try { store.delHome(p.getUniqueId(), name); } catch (IOException e) { p.sendMessage(plugin.getLang().t("common.delete_failed")); return true; }
+        p.sendMessage(plugin.getLang().tr("homes.deleted", "name", name));
         return true;
     }
 
     private boolean handleHomes(CommandSender sender) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         List<String> list = store.listHomes(p.getUniqueId());
-        if (list.isEmpty()) { p.sendMessage("§e你还没有设置家的位置。"); return true; }
+        if (list.isEmpty()) { p.sendMessage(plugin.getLang().t("homes.none")); return true; }
         if (BedrockUtil.isBedrock(p)) {
             // 简化：基岩版暂用文本列表
-            p.sendMessage("§6你的家: §f" + String.join(", ", list));
+            p.sendMessage("§6" + plugin.getLang().t("menu.homes.title") + ": §f" + String.join(", ", list));
         } else {
-            Inventory inv = Bukkit.createInventory(p, 27, "我的家");
+            String title = plugin.getLang().t("menu.homes.title");
+            Inventory inv = Bukkit.createInventory(p, 27, title);
             for (String name : list) {
                 ItemStack it = new ItemStack(Material.ENDER_PEARL);
                 ItemMeta im = it.getItemMeta();
-                im.setDisplayName("§a家: " + name);
+                im.setDisplayName(plugin.getLang().tr("display.home.item", "name", name));
                 it.setItemMeta(im);
                 inv.addItem(it);
             }
@@ -214,51 +219,52 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
     // 传送点
     private boolean handleSetWarp(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
-        if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage("§c没有权限。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
+        if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
         Player p = (Player) sender;
-        if (args.length < 1) { p.sendMessage("§e用法: /setwarp <名称>"); return true; }
+        if (args.length < 1) { p.sendMessage(plugin.getLang().t("usage.setwarp")); return true; }
         String name = args[0];
-        try { store.setWarp(name, p.getLocation()); } catch (IOException e) { p.sendMessage("§c保存失败。"); return true; }
-        p.sendMessage("§a已设置公共传送点: §e" + name);
+        try { store.setWarp(name, p.getLocation()); } catch (IOException e) { p.sendMessage(plugin.getLang().t("common.save_failed")); return true; }
+        p.sendMessage(plugin.getLang().tr("warps.set", "name", name));
         return true;
     }
 
     private boolean handleWarp(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
-        if (args.length < 1) { p.sendMessage("§e用法: /warp <名称>"); return true; }
+        if (args.length < 1) { p.sendMessage(plugin.getLang().t("usage.warp")); return true; }
         String name = args[0];
         Location loc = store.getWarp(name);
-        if (loc == null) { p.sendMessage("§c未找到传送点: " + name); return true; }
+        if (loc == null) { p.sendMessage(plugin.getLang().tr("warps.not_found", "name", name)); return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage("§a已到达传送点 §e" + name));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().tr("warps.arrived", "name", name)));
         return true;
     }
 
     private boolean handleDelWarp(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage("§c没有权限。"); return true; }
-        if (args.length < 1) { sender.sendMessage("§e用法: /delwarp <名称>"); return true; }
+        if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
+        if (args.length < 1) { sender.sendMessage(plugin.getLang().t("usage.delwarp")); return true; }
         String name = args[0];
-        try { store.delWarp(name); } catch (IOException e) { sender.sendMessage("§c删除失败。"); return true; }
-        sender.sendMessage("§a已删除传送点: §e" + name);
+        try { store.delWarp(name); } catch (IOException e) { sender.sendMessage(plugin.getLang().t("common.delete_failed")); return true; }
+        sender.sendMessage(plugin.getLang().tr("warps.deleted", "name", name));
         return true;
     }
 
     private boolean handleWarps(CommandSender sender) {
-        if (!(sender instanceof Player)) { sender.sendMessage("可用传送点: " + String.join(", ", store.listWarps())); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().tr("warps.list", "list", String.join(", ", store.listWarps()))); return true; }
         Player p = (Player) sender;
         List<String> list = store.listWarps();
-        if (list.isEmpty()) { p.sendMessage("§e没有公共传送点。"); return true; }
+        if (list.isEmpty()) { p.sendMessage(plugin.getLang().t("warps.none")); return true; }
         if (BedrockUtil.isBedrock(p)) {
-            p.sendMessage("§6公共传送点: §f" + String.join(", ", list));
+            p.sendMessage("§6" + plugin.getLang().t("menu.warps.title") + ": §f" + String.join(", ", list));
         } else {
-            Inventory inv = Bukkit.createInventory(p, 27, "公共传送点");
+            String title = plugin.getLang().t("menu.warps.title");
+            Inventory inv = Bukkit.createInventory(p, 27, title);
             for (String name : list) {
                 ItemStack it = new ItemStack(Material.ENDER_EYE);
                 ItemMeta im = it.getItemMeta();
-                im.setDisplayName("§b传送点: " + name);
+                im.setDisplayName(plugin.getLang().tr("display.warp.item", "name", name));
                 it.setItemMeta(im);
                 inv.addItem(it);
             }
@@ -268,27 +274,27 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     }
 
     private boolean handleSpawn(CommandSender sender) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         Location loc = p.getWorld().getSpawnLocation();
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage("§a已传送至出生点"));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().t("spawn.done")));
         return true;
     }
 
     private boolean handleBack(CommandSender sender) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         Location back = store.getBack(p.getUniqueId());
-        if (back == null) { p.sendMessage("§c没有可返回的位置。"); return true; }
+        if (back == null) { p.sendMessage(plugin.getLang().t("back.none")); return true; }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, back, delay, () -> p.sendMessage("§a已返回上一个位置"));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, back, delay, () -> p.sendMessage(plugin.getLang().t("back.done")));
         return true;
     }
 
     private boolean handleRtp(CommandSender sender) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         World world = p.getWorld();
         int radius = plugin.getConfig().getInt("rtp.radius", 2000);
@@ -302,28 +308,29 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             Material feet = test.clone().add(0, -1, 0).getBlock().getType();
             if (!feet.isAir() && feet.isSolid()) { dest = test; break; }
         }
-        if (dest == null) { p.sendMessage("§c未找到安全位置，请重试。"); return true; }
+        if (dest == null) { p.sendMessage(plugin.getLang().t("rtp.no_safe")); return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage("§a随机传送完成"));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
         return true;
     }
 
     private boolean handleTpMenu(CommandSender sender) {
-        if (!(sender instanceof Player)) { sender.sendMessage("仅玩家可用。"); return true; }
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         if (BedrockUtil.isBedrock(p)) {
-            p.sendMessage("§e[基岩版表单暂未启用依赖，已回退为聊天菜单]");
-            p.sendMessage(" - 输入 /homes 查看我的家");
-            p.sendMessage(" - 输入 /warps 查看公共传送点");
-            p.sendMessage(" - 输入 /rtp 随机传送");
-            p.sendMessage(" - 输入 /back 返回地点");
+            p.sendMessage(plugin.getLang().t("bedrock.menu.header"));
+            p.sendMessage(plugin.getLang().t("bedrock.menu.tip.homes"));
+            p.sendMessage(plugin.getLang().t("bedrock.menu.tip.warps"));
+            p.sendMessage(plugin.getLang().t("bedrock.menu.tip.rtp"));
+            p.sendMessage(plugin.getLang().t("bedrock.menu.tip.back"));
         } else {
-            Inventory inv = Bukkit.createInventory(p, 27, "传送菜单");
-            inv.setItem(10, named(new ItemStack(Material.RED_BED), "§a我的家"));
-            inv.setItem(12, named(new ItemStack(Material.ENDER_EYE), "§b公共传送点"));
-            inv.setItem(14, named(new ItemStack(Material.ENDER_PEARL), "§d随机传送"));
-            inv.setItem(16, named(new ItemStack(Material.COMPASS), "§e返回地点"));
+            String title = plugin.getLang().t("menu.main.title");
+            Inventory inv = Bukkit.createInventory(p, 27, title);
+            inv.setItem(10, named(new ItemStack(Material.RED_BED), "§a" + plugin.getLang().t("menu.main.homes")));
+            inv.setItem(12, named(new ItemStack(Material.ENDER_EYE), "§b" + plugin.getLang().t("menu.main.warps")));
+            inv.setItem(14, named(new ItemStack(Material.ENDER_PEARL), "§d" + plugin.getLang().t("menu.main.rtp")));
+            inv.setItem(16, named(new ItemStack(Material.COMPASS), "§e" + plugin.getLang().t("menu.main.back")));
             p.openInventory(inv);
         }
         return true;
@@ -341,22 +348,32 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(e.getWhoClicked() instanceof Player)) return;
         if (e.getView().getTitle() == null) return;
         String title = e.getView().getTitle();
-        if (!title.equals("传送菜单") && !title.equals("公共传送点") && !title.equals("我的家")) return;
+        String mainTitle = plugin.getLang().t("menu.main.title");
+        String warpsTitle = plugin.getLang().t("menu.warps.title");
+        String homesTitle = plugin.getLang().t("menu.homes.title");
+        if (!title.equals(mainTitle) && !title.equals(warpsTitle) && !title.equals(homesTitle)) return;
         e.setCancelled(true);
         Player p = (Player) e.getWhoClicked();
         ItemStack current = e.getCurrentItem();
         if (current == null || !current.hasItemMeta() || !current.getItemMeta().hasDisplayName()) return;
         String name = current.getItemMeta().getDisplayName();
-        if (title.equals("传送菜单")) {
-            if (name.contains("我的家")) { p.closeInventory(); handleHomes(p); }
-            else if (name.contains("公共传送点")) { p.closeInventory(); handleWarps(p); }
-            else if (name.contains("随机传送")) { p.closeInventory(); handleRtp(p); }
-            else if (name.contains("返回地点")) { p.closeInventory(); handleBack(p); }
-        } else if (title.equals("公共传送点")) {
-            String warp = ChatColor.stripColor(name).replace("传送点: ", "").trim();
+        if (title.equals(mainTitle)) {
+            String nHomes = plugin.getLang().t("menu.main.homes");
+            String nWarps = plugin.getLang().t("menu.main.warps");
+            String nRtp = plugin.getLang().t("menu.main.rtp");
+            String nBack = plugin.getLang().t("menu.main.back");
+            String stripped = ChatColor.stripColor(name);
+            if (stripped.contains(nHomes)) { p.closeInventory(); handleHomes(p); }
+            else if (stripped.contains(nWarps)) { p.closeInventory(); handleWarps(p); }
+            else if (stripped.contains(nRtp)) { p.closeInventory(); handleRtp(p); }
+            else if (stripped.contains(nBack)) { p.closeInventory(); handleBack(p); }
+        } else if (title.equals(warpsTitle)) {
+            String prefix = plugin.getLang().t("display.warp.prefix");
+            String warp = ChatColor.stripColor(name).replace(prefix, "").trim();
             p.closeInventory(); handleWarp(p, new String[]{warp});
-        } else if (title.equals("我的家")) {
-            String home = ChatColor.stripColor(name).replace("家: ", "").trim();
+        } else if (title.equals(homesTitle)) {
+            String prefix = plugin.getLang().t("display.home.prefix");
+            String home = ChatColor.stripColor(name).replace(prefix, "").trim();
             p.closeInventory(); handleHome(p, new String[]{home});
         }
     }
