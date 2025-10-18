@@ -1,6 +1,6 @@
-name: StarTeleport
+name: NovaTeleport
 version: 1.3
-main: com.xinglingqaq.StarTeleport
+main: com.novamclabs.StarTeleport
 
 permissions:
   starteleport.pass:

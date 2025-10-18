@@ -1,4 +1,4 @@
-package com.xinglingqaq;
+package com.novamclabs;
 
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
