@@ -18,5 +18,5 @@
 
 **权限节点**
 
-* `starteleport.pass` - 授予玩家触发传送的权限
-* `starteleport.command.reload` - 授予重载配置文件的权限
+* `novateleport.pass` - 授予玩家触发阈值传送的权限
+* `novateleport.command.reload` - 授予重载配置文件的权限

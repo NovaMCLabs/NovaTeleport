@@ -1,5 +1,5 @@
 debug: false
-# 传送延迟配置(秒)
+# 传送延迟配置(秒) - 世界阈值传送专用
 delay_seconds: 5
 # Y轴阈值配置（负数表示低于该值触发，正数表示高于该值触发）
 # 此值作为默认值，当世界配置中没有指定threshold_y时使用
@@ -17,3 +17,28 @@ worlds:
     # 此世界的Y轴阈值，可以与其他世界不同
     threshold_y: -30
 # 可继续添加更多传送规则
+
+# 指令统一延迟(秒)
+commands:
+  teleport_delay_seconds: 3
+
+# 家系统默认上限
+homes:
+  default_limit: 1
+
+# 随机传送配置
+rtp:
+  radius: 2000
+  tries: 20
+
+# 传送动画与落地效果开关
+features:
+  animation_enabled: true
+  post_effect_enabled: true
+
+# 传送完成后的效果配置
+post_teleport_effect:
+  enabled: true
+  effect: BLINDNESS
+  duration: 3
+  amplifier: 0

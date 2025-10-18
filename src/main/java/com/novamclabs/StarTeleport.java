@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class StarTeleport extends JavaPlugin implements Listener, CommandExecutor {
     private boolean debug;
     private int teleportDelay;
+    private com.novamclabs.storage.DataStore dataStore;
     // 使用 ConcurrentHashMap 来避免并发问题
     private final Map<Player, BukkitTask> taskMap = new ConcurrentHashMap<>();
     // 记录玩家是否可以触发传送（用于控制重复触发）
@@ -38,7 +39,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             return false;
         }
         
-        if (!sender.hasPermission("starteleport.command.reload")) {
+        if (!sender.hasPermission("novateleport.command.reload")) {
             sender.sendMessage("§c你没有权限执行此命令！");
             return true;
         }
@@ -55,9 +56,20 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        // 初始化数据存储
+        this.dataStore = new com.novamclabs.storage.DataStore(getDataFolder());
         loadConfig();
         getServer().getPluginManager().registerEvents(this, this);
         getCommand("stp").setExecutor(this);
+        // 注册传送相关命令
+        com.novamclabs.commands.TeleportCommandHandler handler = new com.novamclabs.commands.TeleportCommandHandler(this);
+        String[] cmds = {"tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","homes","setwarp","warp","delwarp","warps","spawn","back","rtp","tpmenu"};
+        for (String c : cmds) {
+            if (getCommand(c) != null) {
+                getCommand(c).setExecutor(handler);
+                getCommand(c).setTabCompleter(handler);
+            }
+        }
         getLogger().info("NovaTeleport——已成功启动！");
     }
 
@@ -95,7 +107,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     public void onPlayerMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
         
-        if (!player.hasPermission("starteleport.pass")) {
+        if (!player.hasPermission("novateleport.pass")) {
             return;
         }
 
@@ -257,6 +269,12 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
 
         // 记录玩家开始传送时的位置
         originalLocations.put(player, player.getLocation().clone());
+        // 记录/back 位置
+        try {
+            if (this.dataStore != null) {
+                this.dataStore.setBack(player.getUniqueId(), player.getLocation());
+            }
+        } catch (Exception ignored) {}
         
         scheduleTeleport(player, targetWorld);
         
@@ -268,26 +286,30 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
                     String.format("%.2f", player.getLocation().getZ())});
         }
     }
+
+    public com.novamclabs.storage.DataStore getDataStore() {
+        return dataStore;
+    }
     
     /**
      * 调度传送任务
      */
     private void scheduleTeleport(Player player, World targetWorld) {
-        BukkitTask task = getServer().getScheduler().runTaskTimer(this, new Runnable() {
-            private int remaining = teleportDelay;
-            
-            @Override
-            public void run() {
-                if (remaining > 0) {
-                    player.sendTitle("§e即将传送", "剩余 " + remaining + " 秒", 0, 20, 0);
-                    remaining--;
-                } else {
-                    executeTeleport(player, targetWorld);
-                }
-            }
-        }, 0L, 20L);
-        
-        taskMap.put(player, task);
+        org.bukkit.Location target = targetWorld.getSpawnLocation();
+        BukkitTask task = com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(this, player, target, teleportDelay, () -> {
+            // 传送完成后的回调
+            BukkitTask t = taskMap.remove(player);
+            if (t != null) t.cancel();
+            originalLocations.remove(player);
+            player.sendMessage("§a传送完成！");
+        });
+        if (task != null) {
+            taskMap.put(player, task);
+        } else {
+            // 无延迟直接传送
+            player.teleport(target);
+            player.sendMessage("§a传送完成！");
+        }
     }
     
     /**

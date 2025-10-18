@@ -17,5 +17,5 @@ This plugin teleports players to a specific world when they reach a designated a
 
 **Permission Nodes**
 
-* `starteleport.pass` - Grants permission to trigger teleportation
-* `starteleport.command.reload` - Grants permission to reload configuration files
+* `novateleport.pass` - Grants permission to trigger threshold-based teleportation
+* `novateleport.command.reload` - Grants permission to reload configuration files
