@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Listener {
     private final StarTeleport plugin;
     private final DataStore store;
+    private final Map<UUID, Integer> rtpRadiusChoices = new ConcurrentHashMap<>();
 
     public TeleportCommandHandler(StarTeleport plugin) {
         this.plugin = plugin;
@@ -64,6 +65,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             case "spawn": return handleSpawn(sender);
             case "back": return handleBack(sender);
             case "rtp": return handleRtp(sender);
+            case "rtpgui": return handleRtpGui(sender);
             case "tpmenu": return handleTpMenu(sender);
         }
         return false;
@@ -305,6 +307,27 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         return true;
     }
 
+    private boolean handleRtpGui(CommandSender sender) {
+        if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
+        Player p = (Player) sender;
+        openRtpGui(p);
+        return true;
+    }
+
+    private void openRtpGui(Player p) {
+        int defaultRadius = plugin.getConfig().getInt("rtp.radius", 2000);
+        rtpRadiusChoices.putIfAbsent(p.getUniqueId(), defaultRadius);
+        int radius = rtpRadiusChoices.get(p.getUniqueId());
+        String title = plugin.getLang().t("menu.rtp.title");
+        Inventory inv = Bukkit.createInventory(p, 27, title);
+        int step = plugin.getConfig().getInt("rtp.gui.step", 500);
+        inv.setItem(11, named(new ItemStack(Material.REDSTONE), "§c" + plugin.getLang().tr("menu.rtp.decrease", "step", step)));
+        inv.setItem(13, named(new ItemStack(Material.COMPASS), "§e" + plugin.getLang().tr("menu.rtp.current", "radius", radius)));
+        inv.setItem(15, named(new ItemStack(Material.SLIME_BALL), "§a" + plugin.getLang().tr("menu.rtp.increase", "step", step)));
+        inv.setItem(22, named(new ItemStack(Material.ENDER_PEARL), "§d" + plugin.getLang().t("menu.rtp.start")));
+        p.openInventory(inv);
+    }
+
     private boolean handleTpMenu(CommandSender sender) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
@@ -341,7 +364,8 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         String mainTitle = plugin.getLang().t("menu.main.title");
         String warpsTitle = plugin.getLang().t("menu.warps.title");
         String homesTitle = plugin.getLang().t("menu.homes.title");
-        if (!title.equals(mainTitle) && !title.equals(warpsTitle) && !title.equals(homesTitle)) return;
+        String rtpTitle = plugin.getLang().t("menu.rtp.title");
+        if (!title.equals(mainTitle) && !title.equals(warpsTitle) && !title.equals(homesTitle) && !title.equals(rtpTitle)) return;
         e.setCancelled(true);
         Player p = (Player) e.getWhoClicked();
         ItemStack current = e.getCurrentItem();
@@ -355,7 +379,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             String stripped = ChatColor.stripColor(name);
             if (stripped.contains(nHomes)) { p.closeInventory(); handleHomes(p); }
             else if (stripped.contains(nWarps)) { p.closeInventory(); handleWarps(p); }
-            else if (stripped.contains(nRtp)) { p.closeInventory(); handleRtp(p); }
+            else if (stripped.contains(nRtp)) { p.closeInventory(); openRtpGui(p); }
             else if (stripped.contains(nBack)) { p.closeInventory(); handleBack(p); }
         } else if (title.equals(warpsTitle)) {
             String prefix = plugin.getLang().t("display.warp.prefix");
@@ -365,6 +389,37 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             String prefix = plugin.getLang().t("display.home.prefix");
             String home = ChatColor.stripColor(name).replace(prefix, "").trim();
             p.closeInventory(); handleHome(p, new String[]{home});
+        } else if (title.equals(rtpTitle)) {
+            int step = plugin.getConfig().getInt("rtp.gui.step", 500);
+            String dec = plugin.getLang().tr("menu.rtp.decrease", "step", step);
+            String inc = plugin.getLang().tr("menu.rtp.increase", "step", step);
+            String currentLabel = plugin.getLang().t("menu.rtp.current");
+            String start = plugin.getLang().t("menu.rtp.start");
+            String stripped = ChatColor.stripColor(name);
+            if (stripped.contains(dec.replace("§", ""))) {
+                int radius = rtpRadiusChoices.getOrDefault(p.getUniqueId(), plugin.getConfig().getInt("rtp.radius", 2000));
+                radius = Math.max(step, radius - step);
+                rtpRadiusChoices.put(p.getUniqueId(), radius);
+                openRtpGui(p);
+            } else if (stripped.contains(inc.replace("§", ""))) {
+                int radius = rtpRadiusChoices.getOrDefault(p.getUniqueId(), plugin.getConfig().getInt("rtp.radius", 2000));
+                int max = com.novamclabs.util.RTPUtil.loadSettings(plugin, p.getWorld()).radius;
+                radius = Math.min(max, radius + step);
+                rtpRadiusChoices.put(p.getUniqueId(), radius);
+                openRtpGui(p);
+            } else if (stripped.contains(start.replace("§", ""))) {
+                p.closeInventory();
+                int radius = rtpRadiusChoices.getOrDefault(p.getUniqueId(), plugin.getConfig().getInt("rtp.radius", 2000));
+                java.util.Random rnd = new java.util.Random();
+                org.bukkit.Location dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, p.getWorld(), rnd, radius);
+                if (dest == null) {
+                    p.sendMessage(plugin.getLang().t("rtp.no_safe"));
+                } else {
+                    try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
+                    int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
+                    com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
+                }
+            }
         }
     }
 

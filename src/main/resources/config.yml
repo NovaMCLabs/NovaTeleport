@@ -36,6 +36,8 @@ rtp:
     z: 0
   min_y: -64
   max_y: 319
+  gui:
+    step: 500
   avoid:
     water: true
     lava: true

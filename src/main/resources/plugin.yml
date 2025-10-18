@@ -120,6 +120,10 @@ commands:
     description: 随机传送
     usage: /rtp
     permission: novateleport.command.rtp
+  rtpgui:
+    description: 打开随机传送界面
+    usage: /rtpgui
+    permission: novateleport.command.rtp
   tpmenu:
     description: 打开传送菜单
     usage: /tpmenu

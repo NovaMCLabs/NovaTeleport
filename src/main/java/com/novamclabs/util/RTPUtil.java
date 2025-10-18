@@ -51,7 +51,12 @@ public class RTPUtil {
     }
 
     public static Location findSafeLocation(StarTeleport plugin, World world, Random rnd) {
+        return findSafeLocation(plugin, world, rnd, null);
+    }
+
+    public static Location findSafeLocation(StarTeleport plugin, World world, Random rnd, Integer overrideRadius) {
         RtpSettings s = loadSettings(plugin, world);
+        if (overrideRadius != null && overrideRadius > 0) s.radius = overrideRadius;
         for (int i = 0; i < s.tries; i++) {
             // 均匀分布选点：半径使用 sqrt 随机
             double angle = rnd.nextDouble() * Math.PI * 2.0;
