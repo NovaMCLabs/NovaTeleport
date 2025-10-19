@@ -1,6 +1,6 @@
 [**简体中文 - CN**] | [[**English - EN**](README.md)]
 
-### StarTeleport - 星之传送
+### NovaTeleport - 星之传送
 
 **插件描述**
 本插件可实现当玩家达到指定高度时，将玩家传送至特定世界。传送过程包含以下机制：
@@ -18,5 +18,5 @@
 
 **权限节点**
 
-* `starteleport.pass` - 授予玩家触发传送的权限
-* `starteleport.command.reload` - 授予重载配置文件的权限
+* `novateleport.pass` - 授予玩家触发阈值传送的权限
+* `novateleport.command.reload` - 授予重载配置文件的权限

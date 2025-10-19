@@ -1,19 +1,130 @@
-name: StarTeleport
+name: NovaTeleport
 version: 1.3
-main: com.xinglingqaq.StarTeleport
+main: com.novamclabs.StarTeleport
+api-version: 1.16
+softdepend: [Vault, PlaceholderAPI, floodgate]
 
 permissions:
-  starteleport.pass:
-    description: 允许玩家触发传送
+  novateleport.pass:
+    description: 允许玩家触发世界阈值传送
     default: op
-  starteleport.command.reload:
+  novateleport.command.reload:
     description: 允许重载插件配置
     default: op
+  novateleport.admin:
+    description: NovaTeleport 管理员权限
+    default: op
+  novateleport.command.tpa:
+    description: 使用 /tpa
+    default: true
+  novateleport.command.tpahere:
+    description: 使用 /tpahere
+    default: true
+  novateleport.command.tpaccept:
+    description: 使用 /tpaccept
+    default: true
+  novateleport.command.tpdeny:
+    description: 使用 /tpdeny
+    default: true
+  novateleport.command.tpcancel:
+    description: 使用 /tpcancel
+    default: true
+  novateleport.command.home:
+    description: 使用 /home /sethome /delhome /homes
+    default: true
+  novateleport.command.warp:
+    description: 使用 /warp /warps
+    default: true
+  novateleport.command.setwarp:
+    description: 使用 /setwarp /delwarp
+    default: op
+  novateleport.command.spawn:
+    description: 使用 /spawn
+    default: true
+  novateleport.command.back:
+    description: 使用 /back
+    default: true
+  novateleport.command.rtp:
+    description: 使用 /rtp
+    default: true
+  novateleport.command.tpmenu:
+    description: 使用 /tpmenu 打开菜单
+    default: true
 
 commands:
   stp:
     description: 重载插件配置
     usage: /stp reload
-    permission: starteleport.command.reload
-
-api-version: 1.16
+    permission: novateleport.command.reload
+  tpa:
+    description: 请求传送到玩家
+    usage: /tpa <玩家>
+    permission: novateleport.command.tpa
+  tpahere:
+    description: 请求玩家传送到你
+    usage: /tpahere <玩家>
+    permission: novateleport.command.tpahere
+  tpaccept:
+    description: 接受传送请求
+    usage: /tpaccept
+    permission: novateleport.command.tpaccept
+  tpdeny:
+    description: 拒绝传送请求
+    usage: /tpdeny
+    permission: novateleport.command.tpdeny
+  tpcancel:
+    description: 取消自己发起的传送请求
+    usage: /tpcancel
+    permission: novateleport.command.tpcancel
+  sethome:
+    description: 设置家
+    usage: /sethome [名称]
+    permission: novateleport.command.home
+  home:
+    description: 回家
+    usage: /home [名称]
+    permission: novateleport.command.home
+  delhome:
+    description: 删除家
+    usage: /delhome [名称]
+    permission: novateleport.command.home
+  homes:
+    description: 列出我的家
+    usage: /homes
+    permission: novateleport.command.home
+  setwarp:
+    description: 设置公共传送点
+    usage: /setwarp <名称>
+    permission: novateleport.command.setwarp
+  warp:
+    description: 前往公共传送点
+    usage: /warp <名称>
+    permission: novateleport.command.warp
+  delwarp:
+    description: 删除公共传送点
+    usage: /delwarp <名称>
+    permission: novateleport.command.setwarp
+  warps:
+    description: 列出公共传送点
+    usage: /warps
+    permission: novateleport.command.warp
+  spawn:
+    description: 前往出生点
+    usage: /spawn
+    permission: novateleport.command.spawn
+  back:
+    description: 返回上一个位置
+    usage: /back
+    permission: novateleport.command.back
+  rtp:
+    description: 随机传送
+    usage: /rtp
+    permission: novateleport.command.rtp
+  rtpgui:
+    description: 打开随机传送界面
+    usage: /rtpgui
+    permission: novateleport.command.rtp
+  tpmenu:
+    description: 打开传送菜单
+    usage: /tpmenu
+    permission: novateleport.command.tpmenu
