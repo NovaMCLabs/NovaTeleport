@@ -21,6 +21,10 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private int teleportDelay;
     private com.novamclabs.storage.DataStore dataStore;
     private com.novamclabs.lang.LanguageManager lang;
+    private com.novamclabs.animations.AnimationManager animationManager;
+    private com.novamclabs.portals.PortalManager portalManager;
+    private com.novamclabs.rtp.RtpPoolManager rtpPoolManager;
+    private com.novamclabs.scrolls.ScrollManager scrollManager;
     // 使用 ConcurrentHashMap 来避免并发问题
     private final Map<Player, BukkitTask> taskMap = new ConcurrentHashMap<>();
     // 记录玩家是否可以触发传送（用于控制重复触发）
@@ -64,6 +68,12 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         this.dataStore = new com.novamclabs.storage.DataStore(getDataFolder());
         // Vault 经济初始化
         com.novamclabs.util.EconomyUtil.setup(this);
+        // 动画/传送门/RTP池/卷轴 初始化
+        this.animationManager = new com.novamclabs.animations.AnimationManager(this);
+        this.portalManager = new com.novamclabs.portals.PortalManager(this);
+        this.rtpPoolManager = new com.novamclabs.rtp.RtpPoolManager(this);
+        this.scrollManager = new com.novamclabs.scrolls.ScrollManager(this);
+
         loadConfig();
         getServer().getPluginManager().registerEvents(this, this);
         getCommand("stp").setExecutor(this);
@@ -75,6 +85,13 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
                 getCommand(c).setExecutor(handler);
                 getCommand(c).setTabCompleter(handler);
             }
+        }
+        // 额外命令
+        if (getCommand("tpanimation") != null) {
+            getCommand("tpanimation").setExecutor(new com.novamclabs.animations.AnimationCommand(this, animationManager));
+        }
+        if (getCommand("scroll") != null) {
+            getCommand("scroll").setExecutor(new com.novamclabs.scrolls.ScrollCommand(this, scrollManager));
         }
         getLogger().info(lang.t("plugin.startup"));
     }
@@ -319,6 +336,8 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     public com.novamclabs.lang.LanguageManager getLang() {
         return lang;
     }
+    public com.novamclabs.animations.AnimationManager getAnimationManager() { return this.animationManager; }
+    public com.novamclabs.rtp.RtpPoolManager getRtpPoolManager() { return this.rtpPoolManager; }
     
     /**
      * 调度传送任务

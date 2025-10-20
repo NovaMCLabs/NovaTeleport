@@ -15,6 +15,8 @@ debug.continue_due_to_small_move: "[Debug] Player {player} movement within toler
 debug.move_distance: "[Debug] Player {player} moved - X: {dx} blocks, Z: {dz} blocks"
 debug.cross_threshold: "[Debug] Player {player} crossed threshold, can trigger again"
 warn.world_not_loaded: "Target world {world} not loaded!"
+portal.activated: "§aPortal §e{name} §aactivated"
+portal.teleporting: "§eTeleporting via portal §a{name} §e..."
 
 common.only_player: "Players only."
 common.no_online_player: "§cPlayer is offline."

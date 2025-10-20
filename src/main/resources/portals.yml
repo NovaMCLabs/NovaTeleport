@@ -1,0 +1,28 @@
+# 自定义传送门配置 portals.yml
+# 你可以定义任意数量的传送门。每个传送门包含框架方块、激活物品、内部方块和目标。
+# 当前版本简化了结构检测：当玩家拿着 activation_item 右键一个 frame_block 时，
+# 插件会在该方块上方生成一个 portal_block 作为入口，玩家进入该方块将被传送。
+# 后续版本将提供任意矩形框架检测与区域填充。
+
+portals:
+  to_nether_custom:
+    name: "to_nether_custom"
+    frame_block: "GLOWSTONE"
+    activation_item: "WATER_BUCKET"
+    portal_block: "NETHER_PORTAL"
+    destination:
+      world: "world_nether"
+      x: "SAME_AS_ENTRY"
+      y: "SAME_AS_ENTRY"
+      z: "SAME_AS_ENTRY"
+
+  moon_gate:
+    name: "moon_gate"
+    frame_block: "END_STONE_BRICKS"
+    activation_item: "DRAGON_BREATH"
+    portal_block: "END_GATEWAY"
+    destination:
+      world: "moon"
+      x: 0
+      y: 100
+      z: 0

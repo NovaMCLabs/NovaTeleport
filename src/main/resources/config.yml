@@ -80,6 +80,10 @@ features:
   animation_enabled: true
   post_effect_enabled: true
 
+animations:
+  # 默认动画风格: magic | tech | natural
+  default_style: magic
+
 # 传送完成后的效果
 post_teleport_effect:
   enabled: true

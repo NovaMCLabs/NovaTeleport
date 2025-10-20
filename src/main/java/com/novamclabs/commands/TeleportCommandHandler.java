@@ -308,7 +308,13 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         World world = p.getWorld();
-        Location dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random());
+        Location dest = null;
+        if (plugin.getRtpPoolManager() != null) {
+            dest = plugin.getRtpPoolManager().poll(world);
+        }
+        if (dest == null) {
+            dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random());
+        }
         if (dest == null) { p.sendMessage(plugin.getLang().t("rtp.no_safe")); return true; }
         if (!ensurePaid(p, "rtp")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}

@@ -53,6 +53,18 @@ permissions:
   novateleport.economy.bypass:
     description: 免除传送费用
     default: op
+  novateleport.animation.select:
+    description: 允许玩家选择动画风格
+    default: true
+  novateleport.animation.tech:
+    description: 解锁科技风格动画
+    default: op
+  novateleport.animation.natural:
+    description: 解锁自然风格动画
+    default: op
+  novateleport.scroll.bind:
+    description: 允许玩家绑定传送卷轴
+    default: op
 
 commands:
   stp:
@@ -131,3 +143,11 @@ commands:
     description: 打开传送菜单
     usage: /tpmenu
     permission: novateleport.command.tpmenu
+  tpanimation:
+    description: 选择传送动画风格
+    usage: /tpanimation select <magic|tech|natural>
+    permission: novateleport.animation.select
+  scroll:
+    description: 传送卷轴指令
+    usage: /scroll bind <home|warp> <名称>
+    permission: novateleport.scroll.bind
