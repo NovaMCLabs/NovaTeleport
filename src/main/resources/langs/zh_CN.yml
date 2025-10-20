@@ -85,3 +85,7 @@ bedrock.menu.tip.homes: " - 输入 /homes 查看我的家"
 bedrock.menu.tip.warps: " - 输入 /warps 查看公共传送点"
 bedrock.menu.tip.rtp: " - 输入 /rtp 随机传送 (或 /rtpgui 打开GUI)"
 bedrock.menu.tip.back: " - 输入 /back 返回地点"
+
+# 经济
+Economy: "经济"
+economy.not_enough: "§c余额不足，需要: §e{amount}"

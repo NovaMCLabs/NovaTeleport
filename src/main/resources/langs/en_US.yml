@@ -85,3 +85,7 @@ bedrock.menu.tip.homes: " - Use /homes to view your homes"
 bedrock.menu.tip.warps: " - Use /warps to view public warps"
 bedrock.menu.tip.rtp: " - Use /rtp to random teleport (or /rtpgui to open GUI)"
 bedrock.menu.tip.back: " - Use /back to return"
+
+# Economy
+Economy: "Economy"
+economy.not_enough: "§cInsufficient funds. Need: §e{amount}"

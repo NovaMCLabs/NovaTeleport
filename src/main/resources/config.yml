@@ -1,33 +1,40 @@
-language: zh_CN
-debug: false
-# 传送延迟配置(秒) - 世界阈值传送专用
-delay_seconds: 5
-# Y轴阈值配置（负数表示低于该值触发，正数表示高于该值触发）
-# 此值作为默认值，当世界配置中没有指定threshold_y时使用
-threshold_y: -62
-# 世界映射配置
-worlds:
-  tp1:
-    world_from: world
-    world_to: cave
-    # 此世界的Y轴阈值，负数表示低于该值触发，正数表示高于该值触发
-    threshold_y: -64
-  tp2:
-    world_from: nether
-    world_to: target_nether
-    # 此世界的Y轴阈值，可以与其他世界不同
-    threshold_y: -30
-# 可继续添加更多传送规则
+# =========================
+# NovaTeleport 配置文件
+# 说明：本配置已分门别类，便于管理。
+# 如需兼容旧版本配置，插件会自动兼容读取旧键位（language/debug/delay_seconds/threshold_y/worlds 等）。
+# =========================
 
-# 指令统一延迟(秒)
+# 通用设置
+general:
+  language: zh_CN
+  debug: false
+
+# 世界阈值自动传送
+auto_world_teleport:
+  # 触发后倒计时（秒）
+  delay_seconds: 5
+  # 默认Y轴阈值（负数=低于该值触发；正数=高于该值触发）
+  threshold_y: -62
+  # 世界映射规则
+  worlds:
+    tp1:
+      world_from: world
+      world_to: cave
+      threshold_y: -64
+    tp2:
+      world_from: nether
+      world_to: target_nether
+      threshold_y: -30
+
+# 指令统一延迟（秒）
 commands:
   teleport_delay_seconds: 3
 
-# 家系统默认上限
+# 家系统
 homes:
   default_limit: 1
 
-# 随机传送配置
+# 随机传送设置
 rtp:
   radius: 2000
   tries: 30
@@ -68,14 +75,30 @@ rtp:
         x: 0
         z: 0
 
-# 传送动画与落地效果开关
+# 视觉与落地效果
 features:
   animation_enabled: true
   post_effect_enabled: true
 
-# 传送完成后的效果配置
+# 传送完成后的效果
 post_teleport_effect:
   enabled: true
   effect: BLINDNESS
   duration: 3
   amplifier: 0
+
+# 经济系统（需安装 Vault + 经济插件）
+economy:
+  enabled: false
+  # 拥有该权限将免除一切费用
+  bypass_permission: novateleport.economy.bypass
+  # 各类操作费用（0 表示免费）
+  costs:
+    auto_world_teleport: 0
+    home: 0
+    warp: 0
+    spawn: 0
+    back: 0
+    rtp: 0
+    tpa: 0
+    tpahere: 0

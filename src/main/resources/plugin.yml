@@ -50,6 +50,9 @@ permissions:
   novateleport.command.tpmenu:
     description: 使用 /tpmenu 打开菜单
     default: true
+  novateleport.economy.bypass:
+    description: 免除传送费用
+    default: op
 
 commands:
   stp:

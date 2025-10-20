@@ -124,16 +124,19 @@ public class TeleportUtil {
         // 星光洒落与柔和音效
         target.getWorld().spawnParticle(Particle.CRIT, player.getLocation().add(0, 1, 0), 30, 0.3, 0.5, 0.3, 0.02);
         player.playSound(player.getLocation(), Sound.BLOCK_AMETHYST_CLUSTER_BREAK, SoundCategory.PLAYERS, 0.8f, 1.2f);
-        // 2秒持续的星光
-        plugin.getServer().getScheduler().runTaskTimer(plugin, new Runnable() {
+        // 2秒持续的星光（使用 BukkitRunnable 并在结束时取消，避免任务泄露）
+        new org.bukkit.scheduler.BukkitRunnable() {
             int ticks = 40;
             @Override
             public void run() {
-                if (ticks <= 0 || !player.isOnline()) return;
+                if (ticks <= 0 || !player.isOnline()) {
+                    cancel();
+                    return;
+                }
                 player.getWorld().spawnParticle(Particle.CRIT, player.getLocation().add(0, 1, 0), 6, 0.2, 0.4, 0.2, 0.01);
                 ticks -= 5;
             }
-        }, 0L, 5L);
+        }.runTaskTimer(plugin, 0L, 5L);
     }
 
     private static void spawnMagicCircle(Location base, double angle, double radius, Particle particle) {
