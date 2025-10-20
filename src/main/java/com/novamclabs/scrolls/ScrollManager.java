@@ -21,8 +21,8 @@ import java.util.List;
 
 public class ScrollManager implements Listener {
     private final StarTeleport plugin;
-    private Material unboundMaterial = Material.PAPER;
-    private Material boundMaterial = Material.PAPER;
+    private String unboundSpec = "PAPER"; // 支持 ItemsAdder/MMOItems | support IA/MMOItems
+    private String boundSpec = "PAPER";
     private String unboundName = "§e未绑定的传送卷轴";
     private String boundName = "§a传送卷轴: §f{target}";
 
@@ -43,16 +43,15 @@ public class ScrollManager implements Listener {
             try { plugin.saveResource("scrolls.yml", false);} catch (IllegalArgumentException ignored) {}
         }
         YamlConfiguration cfg = YamlConfiguration.loadConfiguration(out);
-        String um = cfg.getString("unbound.material", "PAPER");
-        String bm = cfg.getString("bound.material", "PAPER");
-        this.unboundMaterial = Material.matchMaterial(um) != null ? Material.matchMaterial(um) : Material.PAPER;
-        this.boundMaterial = Material.matchMaterial(bm) != null ? Material.matchMaterial(bm) : Material.PAPER;
+        this.unboundSpec = cfg.getString("unbound.material", "PAPER");
+        this.boundSpec = cfg.getString("bound.material", "PAPER");
         this.unboundName = cfg.getString("unbound.name", this.unboundName);
         this.boundName = cfg.getString("bound.name", this.boundName);
     }
 
     public ItemStack createBoundScroll(String type, String targetName) {
-        ItemStack it = new ItemStack(boundMaterial);
+        ItemStack it = com.novamclabs.util.ItemResolver.resolveItem(boundSpec);
+        if (it == null) it = new ItemStack(Material.PAPER);
         ItemMeta im = it.getItemMeta();
         im.setDisplayName(boundName.replace("{target}", targetName));
         List<String> lore = new ArrayList<>();

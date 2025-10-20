@@ -91,3 +91,6 @@ bedrock.menu.tip.back: " - 输入 /back 返回地点"
 # 经济
 Economy: "经济"
 economy.not_enough: "§c余额不足，需要: §e{amount}"
+base.help.header: "§eNovaTeleport 指令：/ntp <子命令>"
+base.unknown: "§c未知子命令。"
+city.proxy: "§a正在前往跨服主城: §e{server}"

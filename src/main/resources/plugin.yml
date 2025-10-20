@@ -151,3 +151,12 @@ commands:
     description: 传送卷轴指令
     usage: /scroll bind <home|warp> <名称>
     permission: novateleport.scroll.bind
+  city:
+    description: 回城
+    usage: /city
+    permission: novateleport.command.spawn
+    aliases: [hub]
+  novateleport:
+    description: NovaTeleport 主命令
+    usage: /novateleport <子命令>
+    aliases: [ntp, novatp]

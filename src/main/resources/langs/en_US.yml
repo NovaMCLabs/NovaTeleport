@@ -91,3 +91,6 @@ bedrock.menu.tip.back: " - Use /back to return"
 # Economy
 Economy: "Economy"
 economy.not_enough: "§cInsufficient funds. Need: §e{amount}"
+base.help.header: "§eNovaTeleport commands: /ntp <subcommand>"
+base.unknown: "§cUnknown subcommand."
+city.proxy: "§aConnecting to hub server: §e{server}"

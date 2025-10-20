@@ -24,16 +24,16 @@ import java.util.Objects;
 public class PortalManager implements Listener {
     public static class PortalDef {
         public final String name;
-        public final Material frameBlock;
-        public final Material activationItem;
+        public final String frameBlockSpec; // 支持 ItemsAdder 自定义方块 ID | Support IA custom block id
+        public final String activationSpec; // 支持 ItemsAdder/MMOItems 物品 | Support IA/MMOItems
         public final Material portalBlock;
         public final String world;
         public final String x;
         public final String y;
         public final String z;
-        public PortalDef(String name, Material frameBlock, Material activationItem, Material portalBlock,
+        public PortalDef(String name, String frameBlockSpec, String activationSpec, Material portalBlock,
                          String world, String x, String y, String z) {
-            this.name = name; this.frameBlock = frameBlock; this.activationItem = activationItem; this.portalBlock = portalBlock;
+            this.name = name; this.frameBlockSpec = frameBlockSpec; this.activationSpec = activationSpec; this.portalBlock = portalBlock;
             this.world = world; this.x = x; this.y = y; this.z = z;
         }
     }
@@ -64,15 +64,15 @@ public class PortalManager implements Listener {
             ConfigurationSection s = sec.getConfigurationSection(key);
             if (s == null) continue;
             String name = s.getString("name", key);
-            Material frame = Material.matchMaterial(Objects.toString(s.getString("frame_block", "OBSIDIAN")));
-            Material act = Material.matchMaterial(Objects.toString(s.getString("activation_item", "FLINT_AND_STEEL")));
+            String frameSpec = Objects.toString(s.getString("frame_block", "OBSIDIAN"));
+            String actSpec = Objects.toString(s.getString("activation_item", "FLINT_AND_STEEL"));
             Material portal = Material.matchMaterial(Objects.toString(s.getString("portal_block", "NETHER_PORTAL")));
             String world = s.getString("destination.world", "world");
             String x = Objects.toString(s.get("destination.x", "SAME_AS_ENTRY"));
             String y = Objects.toString(s.get("destination.y", "SAME_AS_ENTRY"));
             String z = Objects.toString(s.get("destination.z", "SAME_AS_ENTRY"));
-            if (frame == null || act == null || portal == null) continue;
-            map.put(key, new PortalDef(name, frame, act, portal, world, x, y, z));
+            if (portal == null) continue;
+            map.put(key, new PortalDef(name, frameSpec, actSpec, portal, world, x, y, z));
         }
         this.defs = map;
     }
@@ -86,8 +86,9 @@ public class PortalManager implements Listener {
         Location clicked = e.getClickedBlock() != null ? e.getClickedBlock().getLocation() : null;
         if (clicked == null) return;
         for (PortalDef def : defs.values()) {
-            if (e.getItem().getType() == def.activationItem && e.getClickedBlock().getType() == def.frameBlock) {
-                // 简化：在框架方块上方生成一个 portal_block 作为入口
+            if (com.novamclabs.util.ItemResolver.matches(def.activationSpec, it)
+                && com.novamclabs.util.ItemResolver.blockMatchesFrame(def.frameBlockSpec, e.getClickedBlock())) {
+                // 在框架方块上方生成一个 portal_block 作为入口 | place a single portal block above
                 Location place = clicked.clone().add(0, 1, 0);
                 if (place.getBlock().getType().isAir()) {
                     place.getBlock().setType(def.portalBlock);

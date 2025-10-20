@@ -76,8 +76,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
 
         loadConfig();
         getServer().getPluginManager().registerEvents(this, this);
+        getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
         getCommand("stp").setExecutor(this);
-        // 注册传送相关命令
+        // 注册传送相关命令 | Register commands
         com.novamclabs.commands.TeleportCommandHandler handler = new com.novamclabs.commands.TeleportCommandHandler(this);
         String[] cmds = {"tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","homes","setwarp","warp","delwarp","warps","spawn","back","rtp","rtpgui","tpmenu"};
         for (String c : cmds) {
@@ -86,12 +87,20 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
                 getCommand(c).setTabCompleter(handler);
             }
         }
+        if (getCommand("city") != null) {
+            getCommand("city").setExecutor(new com.novamclabs.commands.CityCommand(this));
+            if (getCommand("hub") != null) getCommand("hub").setExecutor(new com.novamclabs.commands.CityCommand(this));
+        }
         // 额外命令
         if (getCommand("tpanimation") != null) {
             getCommand("tpanimation").setExecutor(new com.novamclabs.animations.AnimationCommand(this, animationManager));
         }
         if (getCommand("scroll") != null) {
             getCommand("scroll").setExecutor(new com.novamclabs.scrolls.ScrollCommand(this, scrollManager));
+        }
+        if (getCommand("novateleport") != null) {
+            getCommand("novateleport").setExecutor(new com.novamclabs.commands.BaseCommandRouter(this, handler));
+            getCommand("novateleport").setTabCompleter(new com.novamclabs.commands.BaseCommandRouter(this, handler));
         }
         getLogger().info(lang.t("plugin.startup"));
     }
