@@ -85,13 +85,24 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         outgoing.put(requester.getUniqueId(), req);
 
         requester.sendMessage(plugin.getLang().tr("tpa.sent", "target", target.getName(), "seconds", 60));
-        // 目标收到请求
-        if (here) {
-            target.sendMessage(plugin.getLang().tr("tpa.prompt.to_here", "requester", requester.getName()));
+        // 提示目标 | Prompt target
+        if (com.novamclabs.util.BedrockUtil.isBedrock(target)) {
+            boolean sent = com.novamclabs.util.BedrockFormsUtil.showTpaRequestForm(plugin, target, requester.getName(), here);
+            if (!sent) {
+                target.sendMessage(plugin.getLang().tr(here?"tpa.prompt.to_here":"tpa.prompt.to_you", "requester", requester.getName()));
+            }
         } else {
-            target.sendMessage(plugin.getLang().tr("tpa.prompt.to_you", "requester", requester.getName()));
+            // Java 版：可点击消息 | Clickable chat for Java
+            net.md_5.bungee.api.chat.TextComponent yes = new net.md_5.bungee.api.chat.TextComponent(plugin.getLang().t("tpa.click.accept"));
+            yes.setColor(net.md_5.bungee.api.ChatColor.GREEN);
+            yes.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/tpaccept"));
+            net.md_5.bungee.api.chat.TextComponent no = new net.md_5.bungee.api.chat.TextComponent(plugin.getLang().t("tpa.click.deny"));
+            no.setColor(net.md_5.bungee.api.ChatColor.RED);
+            no.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/tpdeny"));
+            net.md_5.bungee.api.chat.TextComponent spacer = new net.md_5.bungee.api.chat.TextComponent(" ");
+            target.spigot().sendMessage(yes, spacer, no);
+            target.sendMessage(plugin.getLang().tr(here?"tpa.prompt.to_here":"tpa.prompt.to_you", "requester", requester.getName()));
         }
-        // Bedrock 模态表单（若可用）省略：无依赖时退化为聊天提示。
         return true;
     }
 

@@ -42,6 +42,8 @@ tpa.denied.sender: "§c你的传送请求被 §e{target} §c拒绝。"
 tpa.denied.target: "§a已拒绝传送请求。"
 tpa.cancelled.target: "§e对方已取消传送请求。"
 tpa.cancelled.requester: "§a已取消。"
+tpa.click.accept: "[同意]"
+tpa.click.deny: "[拒绝]"
 tpa.no_outgoing: "§c你没有已发送的请求。"
 
 homes.limit_reached: "§c你的家数量已达上限 ({limit})。"

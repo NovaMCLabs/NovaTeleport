@@ -42,6 +42,8 @@ tpa.denied.sender: "§cYour request was denied by §e{target}§c."
 tpa.denied.target: "§aTeleport request denied."
 tpa.cancelled.target: "§eThe requester cancelled the teleport."
 tpa.cancelled.requester: "§aCancelled."
+tpa.click.accept: "[ACCEPT]"
+tpa.click.deny: "[DENY]"
 tpa.no_outgoing: "§cYou have no outgoing request."
 
 homes.limit_reached: "§cYou have reached the maximum homes ({limit})."

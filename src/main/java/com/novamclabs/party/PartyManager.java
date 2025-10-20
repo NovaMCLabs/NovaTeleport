@@ -20,10 +20,37 @@ public class PartyManager {
 
     private final StarTeleport plugin;
     private final Map<UUID, Party> byMember = new ConcurrentHashMap<>();
+    private int maxMembers = 4;
+    private int inviteExpireSeconds = 120;
+    private int teleportDelay = 5;
 
     public PartyManager(StarTeleport plugin) {
         this.plugin = plugin;
+        loadConfig();
     }
+
+    public void loadConfig() {
+        java.io.File f = new java.io.File(plugin.getDataFolder(), "party.yml");
+        if (!f.exists()) {
+            try {
+                f.getParentFile().mkdirs();
+                java.nio.file.Files.write(f.toPath(), (
+                        "# Party settings | 组队设置\n" +
+                        "max_members: 4\n" +
+                        "invite_expire_seconds: 120\n" +
+                        "teleport_delay: 5\n"
+                ).getBytes());
+            } catch (Exception ignored) {}
+        }
+        org.bukkit.configuration.file.YamlConfiguration cfg = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(f);
+        maxMembers = cfg.getInt("max_members", 4);
+        inviteExpireSeconds = cfg.getInt("invite_expire_seconds", 120);
+        teleportDelay = cfg.getInt("teleport_delay", 5);
+    }
+
+    public int getMaxMembers() { return maxMembers; }
+    public int getInviteExpireSeconds() { return inviteExpireSeconds; }
+    public int getTeleportDelay() { return teleportDelay; }
 
     public boolean hasParty(UUID uuid) { return byMember.containsKey(uuid); }
     public Party getParty(UUID uuid) { return byMember.get(uuid); }
@@ -43,7 +70,7 @@ public class PartyManager {
     }
 
     public boolean addMember(Party p, Player player) {
-        if (p.members.size() >= plugin.getConfig().getInt("party.max_members", 4)) return false;
+        if (p.members.size() >= getMaxMembers()) return false;
         p.members.add(player.getUniqueId());
         byMember.put(player.getUniqueId(), p);
         return true;

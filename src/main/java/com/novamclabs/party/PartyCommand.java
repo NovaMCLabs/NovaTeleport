@@ -49,7 +49,7 @@ public class PartyCommand implements CommandExecutor {
                 if (args.length < 2) { p.sendMessage(plugin.getLang().t("party.usage.invite")); return true; }
                 Player target = Bukkit.getPlayerExact(args[1]);
                 if (target == null) { p.sendMessage(plugin.getLang().t("common.no_online_player")); return true; }
-                Invite inv = new Invite(); inv.from = p.getUniqueId(); inv.to = target.getUniqueId(); inv.expireAt = System.currentTimeMillis() + plugin.getConfig().getInt("party.invite_expire_seconds", 120)*1000L;
+                Invite inv = new Invite(); inv.from = p.getUniqueId(); inv.to = target.getUniqueId(); inv.expireAt = System.currentTimeMillis() + manager.getInviteExpireSeconds()*1000L;
                 invites.put(inv.to, inv);
                 p.sendMessage(plugin.getLang().tr("party.invited.sender", "target", target.getName()));
                 target.sendMessage(plugin.getLang().tr("party.invited.target", "sender", p.getName()));
@@ -73,11 +73,14 @@ public class PartyCommand implements CommandExecutor {
             case "tp": {
                 PartyManager.Party party = manager.getParty(p.getUniqueId());
                 if (party == null || !manager.isLeader(p.getUniqueId())) { p.sendMessage(plugin.getLang().t("party.not_leader")); return true; }
-                int delay = plugin.getConfig().getInt("party.teleport_delay", 5);
+                int delay = manager.getTeleportDelay();
+                int idx = 0;
                 for (UUID u : party.members) {
                     Player m = Bukkit.getPlayer(u);
                     if (m == null || m.getUniqueId().equals(p.getUniqueId())) continue;
-                    Location dest = p.getLocation();
+                    // 智能分散：在队长周围按圆形散开 | smart spread around leader
+                    double angle = (Math.PI * 2 / Math.max(1, party.members.size())) * (idx++);
+                    Location dest = p.getLocation().clone().add(Math.cos(angle) * 1.5, 0, Math.sin(angle) * 1.5);
                     TeleportUtil.delayedTeleportWithAnimation(plugin, m, dest, delay, () -> m.sendMessage(plugin.getLang().t("party.tp.done")));
                     m.sendMessage(plugin.getLang().t("party.tp.start"));
                 }
