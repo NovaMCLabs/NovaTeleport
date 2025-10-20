@@ -26,13 +26,24 @@ public class BaseCommandRouter implements CommandExecutor, TabCompleter {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
             sender.sendMessage(plugin.getLang().t("base.help.header"));
-            sender.sendMessage("/ntp home|sethome|delhome|homes ...");
             return true;
         }
         String sub = args[0].toLowerCase();
         String[] rest = Arrays.copyOfRange(args, 1, args.length);
-        // 直接路由到已有命令
+        // 直接路由到已有命令 | Route to existing commands
         switch (sub) {
+            case "help":
+                sender.sendMessage(plugin.getLang().t("base.help.header"));
+                return true;
+            case "debug":
+                if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
+                if (rest.length < 1) { sender.sendMessage(plugin.getLang().tr("debug.state", "state", plugin.getConfig().getBoolean("general.debug", false)?plugin.getLang().t("debug.on"):plugin.getLang().t("debug.off"))); return true; }
+                boolean on = rest[0].equalsIgnoreCase("on") || rest[0].equalsIgnoreCase("true");
+                plugin.getConfig().set("general.debug", on);
+                plugin.saveConfig();
+                plugin.setDebug(on);
+                sender.sendMessage(on?plugin.getLang().t("debug.on"):plugin.getLang().t("debug.off"));
+                return true;
             case "tpa": return route(sender, "tpa", rest);
             case "tpahere": return route(sender, "tpahere", rest);
             case "tpaccept": return route(sender, "tpaccept", rest);

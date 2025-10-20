@@ -65,6 +65,9 @@ permissions:
   novateleport.scroll.bind:
     description: 允许玩家绑定传送卷轴
     default: op
+  novateleport.command.party:
+    description: 使用 /party 组队命令
+    default: true
 
 commands:
   stp:
@@ -160,3 +163,7 @@ commands:
     description: NovaTeleport 主命令
     usage: /novateleport <子命令>
     aliases: [ntp, novatp]
+  party:
+    description: 组队系统
+    usage: /party <create|invite|accept|leave|tp>
+    permission: novateleport.command.party

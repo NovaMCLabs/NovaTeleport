@@ -23,7 +23,7 @@ public class AnimationCommand implements CommandExecutor {
         }
         Player p = (Player) sender;
         if (args.length < 2 || !args[0].equalsIgnoreCase("select")) {
-            p.sendMessage("/tpanimation select <magic|tech|natural>");
+            p.sendMessage(plugin.getLang().t("usage.tpanimation"));
             return true;
         }
         String style = args[1].toLowerCase();

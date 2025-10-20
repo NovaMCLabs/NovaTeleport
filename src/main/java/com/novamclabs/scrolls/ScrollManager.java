@@ -83,12 +83,12 @@ public class ScrollManager implements Listener {
             loc = plugin.getDataStore() != null ? plugin.getDataStore().getHome(p.getUniqueId(), target) : null;
         }
         if (loc == null) {
-            p.sendMessage("§c目标无效或不存在。");
+            p.sendMessage(plugin.getLang().t("scroll.invalid_target"));
             return;
         }
-        // 扣费由指令/整体经济开关控制，卷轴本身只消耗
+        // 扣费由指令/整体经济开关控制，卷轴本身只消耗 | Only consume the scroll here
         it.setAmount(it.getAmount() - 1);
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage("§a传送完成。"));
+        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().t("scroll.done")));
     }
 }

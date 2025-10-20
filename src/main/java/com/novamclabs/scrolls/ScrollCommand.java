@@ -20,13 +20,13 @@ public class ScrollCommand implements CommandExecutor {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         if (args.length < 3 || !args[0].equalsIgnoreCase("bind")) {
-            p.sendMessage("/scroll bind <home|warp> <名称>");
+            p.sendMessage(plugin.getLang().t("usage.scroll.bind"));
             return true;
         }
         String type = args[1].toLowerCase();
         String name = args[2];
         if (!type.equals("home") && !type.equals("warp")) {
-            p.sendMessage("/scroll bind <home|warp> <名称>");
+            p.sendMessage(plugin.getLang().t("usage.scroll.bind"));
             return true;
         }
         if (!p.hasPermission("novateleport.scroll.bind")) {

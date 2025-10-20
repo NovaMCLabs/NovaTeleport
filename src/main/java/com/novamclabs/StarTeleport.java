@@ -25,7 +25,8 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private com.novamclabs.portals.PortalManager portalManager;
     private com.novamclabs.rtp.RtpPoolManager rtpPoolManager;
     private com.novamclabs.scrolls.ScrollManager scrollManager;
-    // 使用 ConcurrentHashMap 来避免并发问题
+    private com.novamclabs.party.PartyManager partyManager;
+    // 使用 ConcurrentHashMap 来避免并发问题 | Use concurrent map to avoid concurrency issues
     private final Map<Player, BukkitTask> taskMap = new ConcurrentHashMap<>();
     // 记录玩家是否可以触发传送（用于控制重复触发）
     private final Map<Player, Boolean> canTriggerMap = new ConcurrentHashMap<>();
@@ -99,8 +100,14 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             getCommand("scroll").setExecutor(new com.novamclabs.scrolls.ScrollCommand(this, scrollManager));
         }
         if (getCommand("novateleport") != null) {
-            getCommand("novateleport").setExecutor(new com.novamclabs.commands.BaseCommandRouter(this, handler));
-            getCommand("novateleport").setTabCompleter(new com.novamclabs.commands.BaseCommandRouter(this, handler));
+            com.novamclabs.commands.BaseCommandRouter router = new com.novamclabs.commands.BaseCommandRouter(this, handler);
+            getCommand("novateleport").setExecutor(router);
+            getCommand("novateleport").setTabCompleter(router);
+        }
+        if (getCommand("party") != null) {
+            // 内置组队系统 | built-in party system
+            this.partyManager = new com.novamclabs.party.PartyManager(this);
+            getCommand("party").setExecutor(new com.novamclabs.party.PartyCommand(this, partyManager));
         }
         getLogger().info(lang.t("plugin.startup"));
     }
@@ -347,6 +354,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     }
     public com.novamclabs.animations.AnimationManager getAnimationManager() { return this.animationManager; }
     public com.novamclabs.rtp.RtpPoolManager getRtpPoolManager() { return this.rtpPoolManager; }
+    public void setDebug(boolean enabled) { this.debug = enabled; }
     
     /**
      * 调度传送任务
