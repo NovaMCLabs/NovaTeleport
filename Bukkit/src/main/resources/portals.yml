@@ -1,0 +1,35 @@
+# 自定义传送门配置 portals.yml（中英）
+# 说明 CN: 你可以定义任意数量的传送门。每个传送门包含框架方块、激活物品、内部方块和目标。
+# Explanation EN: Define any number of custom portals. Each portal has frame block spec,
+# activation item, inner portal block type and destination.
+#
+# 框架支持: 原版材质(Material)、ItemsAdder 方块 itemsadder:<id>
+# Activation supports: Vanilla Material or ItemsAdder/MMOItems items
+#
+# 结构检测: 本实现将尝试在垂直平面内检测闭合的矩形框架并填充内部为传送方块；
+# 对于复杂形状可以增加多条定义并分别激活。
+# Structure detection: Detect closed rectangular frames on a vertical plane and
+# fill interior with portal blocks.
+
+portals:
+  to_nether_custom:
+    name: "to_nether_custom"
+    frame_block: "GLOWSTONE"
+    activation_item: "WATER_BUCKET"
+    portal_block: "NETHER_PORTAL"
+    destination:
+      world: "world_nether"
+      x: "SAME_AS_ENTRY"
+      y: "SAME_AS_ENTRY"
+      z: "SAME_AS_ENTRY"
+
+  moon_gate:
+    name: "moon_gate"
+    frame_block: "END_STONE_BRICKS"
+    activation_item: "DRAGON_BREATH"
+    portal_block: "END_GATEWAY"
+    destination:
+      world: "moon"
+      x: 0
+      y: 100
+      z: 0

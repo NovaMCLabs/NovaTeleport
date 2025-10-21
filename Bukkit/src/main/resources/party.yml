@@ -1,0 +1,8 @@
+# Party settings | 组队设置
+max_members: 4
+invite_expire_seconds: 120
+teleport_delay: 5
+# 名称显示 | Name display
+display:
+  leader_prefix: "§6[队长] "
+  member_prefix: "§a[队友] "

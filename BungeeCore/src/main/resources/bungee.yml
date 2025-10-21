@@ -1,0 +1,3 @@
+name: NovaTeleportProxy
+main: com.novamclabs.proxy.NovaTeleportBungee
+version: 1.0.0

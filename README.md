@@ -15,6 +15,14 @@ Key highlights:
 - Root command router with prefix: /novateleport (aliases: /ntp, /novatp)
 - City/hub command: local world or Bungee/Velocity server
 - Built‑in lightweight Party system (/party)
+- Cross-server TPA menu via Redis bus (Bedrock forms + Java clickable chat)
+- Scripting hooks (JS) with MythicMobs/MMOCore reflection calls
+
+Modules (in repo):
+- Plugin (this module)
+- novastorage-lib: JDBC storage + Redis bus (no compile deps)
+- nova-proxy-bungee: Bungee helper plugin
+- nova-proxy-velocity: Velocity helper plugin
 
 ---
 
