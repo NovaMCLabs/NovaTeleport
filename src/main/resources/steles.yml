@@ -1,0 +1,39 @@
+# 传送石碑配置（中英）Teleportation Steles configuration
+enabled: true
+
+activation:
+  item_required: "ENDER_PEARL"
+  item_amount: 1
+  xp_level_cost: 5
+
+teleport_cost:
+  xp_level_cost: 1
+  vault_cost: 100
+
+natural_spawning:
+  enabled: false
+  chance_per_chunk: 0.001
+  allowed_biomes:
+    - "PLAINS"
+    - "FOREST"
+    - "DESERT"
+
+player_crafting:
+  enabled: true
+  core_recipe:
+    shape:
+      - "E L E"
+      - "L N L"
+      - "E L E"
+    ingredients:
+      E: "ENDER_EYE"
+      L: "LODESTONE"
+      N: "NETHER_STAR"
+
+structures:
+  default_ruin:
+    name: "远古石碑"
+    core_block: "LODESTONE"
+    frame:
+      - "-1,-1,-1:MOSSY_STONE_BRICKS"
+      - "0,-1,-1:MOSSY_STONE_BRICKS"

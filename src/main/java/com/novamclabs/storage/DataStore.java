@@ -4,22 +4,27 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.InvalidConfigurationException;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
+/**
+ * 数据存储层（本地YAML + 可扩展跨服字段）
+ * Data store (local YAML with optional cross-server fields)
+ */
 public class DataStore {
     private final File dataFolder;
     private final File homesFile;
     private final File warpsFile;
     private final File playersDir;
+    private String serverName = "local";
 
     private final YamlConfiguration homesCfg = new YamlConfiguration();
     private final YamlConfiguration warpsCfg = new YamlConfiguration();
 
+    // 兼容旧构造（仅通过数据目录）| Legacy constructor
     public DataStore(File pluginDataFolder) {
         this.dataFolder = new File(pluginDataFolder, "data");
         if (!dataFolder.exists()) dataFolder.mkdirs();
@@ -37,7 +42,15 @@ public class DataStore {
         }
     }
 
-    // 通用位置序列化
+    // 新构造：允许设置当前服务器名 | New ctor with server name
+    public DataStore(File pluginDataFolder, String serverName) {
+        this(pluginDataFolder);
+        if (serverName != null && !serverName.isEmpty()) this.serverName = serverName;
+    }
+
+    public String getServerName() { return serverName; }
+
+    // 通用位置序列化 | serialize location
     public static Map<String, Object> serializeLocation(Location loc) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("world", loc.getWorld().getName());
@@ -61,10 +74,18 @@ public class DataStore {
         return new Location(w, x, y, z, yaw, pitch);
     }
 
-    // 家系统
+    // 目标封装：支持跨服 | destination wrapper supports cross-server
+    public static class Destination {
+        public final String server; public final Location location;
+        public Destination(String server, Location location) { this.server = server; this.location = location; }
+    }
+
+    // 家系统 | homes
     public void setHome(UUID uuid, String name, Location loc) throws IOException {
         String path = uuid.toString() + "." + name.toLowerCase(Locale.ROOT);
-        homesCfg.set(path, serializeLocation(loc));
+        Map<String, Object> data = serializeLocation(loc);
+        data.put("server", serverName);
+        homesCfg.set(path, data);
         homesCfg.save(homesFile);
     }
 
@@ -75,10 +96,17 @@ public class DataStore {
     }
 
     public Location getHome(UUID uuid, String name) {
+        Destination d = getHomeDest(uuid, name);
+        return d != null ? d.location : null;
+    }
+
+    public Destination getHomeDest(UUID uuid, String name) {
         String path = uuid.toString() + "." + name.toLowerCase(Locale.ROOT);
         if (!homesCfg.contains(path)) return null;
         Map<String, Object> map = (Map<String, Object>) homesCfg.getConfigurationSection(path).getValues(false);
-        return deserializeLocation(map);
+        String server = Objects.toString(map.getOrDefault("server", serverName));
+        Location loc = deserializeLocation(map);
+        return new Destination(server, loc);
     }
 
     public List<String> listHomes(UUID uuid) {
@@ -86,10 +114,12 @@ public class DataStore {
         return new ArrayList<>(Objects.requireNonNull(homesCfg.getConfigurationSection(uuid.toString())).getKeys(false));
     }
 
-    // 传送点
+    // 传送点 | warps
     public void setWarp(String name, Location loc) throws IOException {
         String path = name.toLowerCase(Locale.ROOT);
-        warpsCfg.set(path, serializeLocation(loc));
+        Map<String, Object> data = serializeLocation(loc);
+        data.put("server", serverName);
+        warpsCfg.set(path, data);
         warpsCfg.save(warpsFile);
     }
 
@@ -100,17 +130,24 @@ public class DataStore {
     }
 
     public Location getWarp(String name) {
+        Destination d = getWarpDest(name);
+        return d != null ? d.location : null;
+    }
+
+    public Destination getWarpDest(String name) {
         String path = name.toLowerCase(Locale.ROOT);
         if (!warpsCfg.contains(path)) return null;
         Map<String, Object> map = (Map<String, Object>) Objects.requireNonNull(warpsCfg.getConfigurationSection(path)).getValues(false);
-        return deserializeLocation(map);
+        String server = Objects.toString(map.getOrDefault("server", serverName));
+        Location loc = deserializeLocation(map);
+        return new Destination(server, loc);
     }
 
     public List<String> listWarps() {
         return new ArrayList<>(warpsCfg.getKeys(false));
     }
 
-    // /back 玩家上一个位置
+    // /back 玩家上一个位置 | back location
     public void setBack(UUID uuid, Location loc) throws IOException {
         File f = new File(playersDir, uuid.toString() + ".yml");
         YamlConfiguration cfg = new YamlConfiguration();

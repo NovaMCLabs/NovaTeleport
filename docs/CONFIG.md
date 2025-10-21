@@ -24,8 +24,8 @@ portals.yml
 - Define many portals under portals:
   - frame_block: Material or itemsadder:<id>
   - activation_item: Material or itemsadder:/mmoitems:TYPE:ID
-  - portal_block: Material to fill 1 block (current impl)
-  - destination: { world, x, y, z } (use SAME_AS_ENTRY for passthrough)
+  - portal_block: Material to fill interior of rectangular frame
+  - destination: { world, x, y, z } (use SAME_AS_ENTRY to keep entry coordinates)
 
 rtp.yml
 - pregen_pool_size: size of async queue per world

@@ -88,16 +88,75 @@ public class PortalManager implements Listener {
         for (PortalDef def : defs.values()) {
             if (com.novamclabs.util.ItemResolver.matches(def.activationSpec, it)
                 && com.novamclabs.util.ItemResolver.blockMatchesFrame(def.frameBlockSpec, e.getClickedBlock())) {
-                // 在框架方块上方生成一个 portal_block 作为入口 | place a single portal block above
-                Location place = clicked.clone().add(0, 1, 0);
-                if (place.getBlock().getType().isAir()) {
-                    place.getBlock().setType(def.portalBlock);
-                    activePortals.put(place.getBlock().getLocation(), def);
+                // 尝试检测垂直矩形框架并填充 | Try detect vertical rectangular frame and fill interior
+                if (tryBuildPortalRegion(e.getPlayer(), clicked, def)) {
                     e.getPlayer().sendMessage(plugin.getLang().tr("portal.activated", "name", def.name));
                 }
                 return;
             }
         }
+    }
+
+    // 检测矩形框架并填充内部为传送方块（支持 X-常量平面 或 Z-常量平面）
+    // Detect rectangular frame in vertical plane (X-constant or Z-constant), fill interior with portal blocks
+    private boolean tryBuildPortalRegion(Player actor, Location origin, PortalDef def) {
+        // 尝试两种平面：x 固定(y,z 平面) 与 z 固定(y,x 平面)
+        if (buildInPlane(origin, def, true)) return true;
+        return buildInPlane(origin, def, false);
+    }
+
+    private boolean buildInPlane(Location origin, PortalDef def, boolean xConstant) {
+        org.bukkit.block.Block start = origin.getBlock();
+        int fixed = xConstant ? start.getX() : start.getZ();
+        // 找到边界：沿着两个轴向扩展，直到非框架方块为止 | expand along axes until non-frame
+        int y0 = start.getY(), y1 = start.getY();
+        int v0 = xConstant ? start.getZ() : start.getX();
+        int v1 = v0;
+        // 向上
+        while (isFrame(def, xConstant ? origin.getWorld().getBlockAt(fixed, y0 - 1, v0)
+                                      : origin.getWorld().getBlockAt(v0, y0 - 1, fixed))) y0--;
+        // 向下
+        while (isFrame(def, xConstant ? origin.getWorld().getBlockAt(fixed, y1 + 1, v0)
+                                      : origin.getWorld().getBlockAt(v0, y1 + 1, fixed))) y1++;
+        // 向负方向（z 或 x）
+        while (isFrame(def, xConstant ? origin.getWorld().getBlockAt(fixed, start.getY(), v0 - 1)
+                                      : origin.getWorld().getBlockAt(v0 - 1, start.getY(), fixed))) v0--;
+        // 向正方向（z 或 x）
+        while (isFrame(def, xConstant ? origin.getWorld().getBlockAt(fixed, start.getY(), v1 + 1)
+                                      : origin.getWorld().getBlockAt(v1 + 1, start.getY(), fixed))) v1++;
+        // 采用外扩一圈后的边界作为矩形周长
+        int minY = y0, maxY = y1, minV = Math.min(v0, v1), maxV = Math.max(v0, v1);
+        if (maxY - minY < 2 || maxV - minV < 2) return false; // 至少 3x3 框架 | need at least 3x3
+        // 校验外圈都是框架方块 | verify perimeter is frame
+        for (int y = minY; y <= maxY; y++) {
+            for (int v = minV; v <= maxV; v++) {
+                boolean edge = (y == minY || y == maxY || v == minV || v == maxV);
+                org.bukkit.block.Block b = xConstant ? origin.getWorld().getBlockAt(fixed, y, v)
+                                                     : origin.getWorld().getBlockAt(v, y, fixed);
+                if (edge) {
+                    if (!isFrame(def, b)) return false;
+                }
+            }
+        }
+        // 填充内部为空气才填充传送方块 | fill only if interior is air
+        boolean placed = false;
+        for (int y = minY + 1; y <= maxY - 1; y++) {
+            for (int v = minV + 1; v <= maxV - 1; v++) {
+                org.bukkit.block.Block b = xConstant ? origin.getWorld().getBlockAt(fixed, y, v)
+                                                     : origin.getWorld().getBlockAt(v, y, fixed);
+                if (b.getType().isAir()) {
+                    b.setType(def.portalBlock);
+                    activePortals.put(b.getLocation(), def);
+                    placed = true;
+                }
+            }
+        }
+        return placed;
+    }
+
+    private boolean isFrame(PortalDef def, org.bukkit.block.Block block) {
+        if (block == null) return false;
+        return com.novamclabs.util.ItemResolver.blockMatchesFrame(def.frameBlockSpec, block);
     }
 
     @EventHandler

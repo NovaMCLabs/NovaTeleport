@@ -76,7 +76,15 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         Player requester = (Player) sender;
         if (args.length < 1) { requester.sendMessage(plugin.getLang().t(here?"usage.tpahere":"usage.tpa")); return true; }
         Player target = Bukkit.getPlayerExact(args[0]);
-        if (target == null) { requester.sendMessage(plugin.getLang().t("common.no_online_player")); return true; }
+        if (target == null) {
+            // 尝试跨服发送请求（Redis）| try cross-server publish via Redis
+            if (plugin.getCrossServerService() != null) {
+                plugin.getCrossServerService().publishTpaRequest(args[0], requester.getName(), here);
+                requester.sendMessage(plugin.getLang().tr("tpa.sent", "target", args[0], "seconds", 60));
+                return true;
+            }
+            requester.sendMessage(plugin.getLang().t("common.no_online_player"));
+            return true; }
         if (target.getUniqueId().equals(requester.getUniqueId())) { requester.sendMessage(plugin.getLang().t("common.cannot_target_self")); return true; }
 
         long expireAt = System.currentTimeMillis() + 60_000; // 60秒过期
@@ -195,12 +203,19 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         String name = args.length >= 1 ? args[0] : "home";
-        Location loc = store.getHome(p.getUniqueId(), name);
-        if (loc == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
+        com.novamclabs.storage.DataStore.Destination dest = store.getHomeDest(p.getUniqueId(), name);
+        if (dest == null || dest.location == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
         if (!ensurePaid(p, "home")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
+        String myServer = plugin.getConfig().getString("network.server_name", "local");
+        if (dest.server != null && !dest.server.equalsIgnoreCase(myServer)) {
+            // 跨服：先连接到目标服，由目标服再次执行 /home | Cross-server connect then run command again
+            com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server);
+            p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
+            return true;
+        }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().t("homes.welcome")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, () -> p.sendMessage(plugin.getLang().t("homes.welcome")));
         return true;
     }
 
@@ -219,8 +234,12 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         List<String> list = store.listHomes(p.getUniqueId());
         if (list.isEmpty()) { p.sendMessage(plugin.getLang().t("homes.none")); return true; }
         if (BedrockUtil.isBedrock(p)) {
-            // 简化：基岩版暂用文本列表
-            p.sendMessage("§6" + plugin.getLang().t("menu.homes.title") + ": §f" + String.join(", ", list));
+            // 基岩版：使用表单列出并点击执行 /home <name> | Bedrock: form list -> /home <name>
+            boolean ok = com.novamclabs.util.BedrockFormsUtil.showListCommandForm(plugin, p,
+                    plugin.getLang().t("menu.homes.title"), list, "home");
+            if (!ok) {
+                p.sendMessage("§6" + plugin.getLang().t("menu.homes.title") + ": §f" + String.join(", ", list));
+            }
         } else {
             String title = plugin.getLang().t("menu.homes.title");
             Inventory inv = Bukkit.createInventory(p, 27, title);
@@ -253,12 +272,18 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         Player p = (Player) sender;
         if (args.length < 1) { p.sendMessage(plugin.getLang().t("usage.warp")); return true; }
         String name = args[0];
-        Location loc = store.getWarp(name);
-        if (loc == null) { p.sendMessage(plugin.getLang().tr("warps.not_found", "name", name)); return true; }
+        com.novamclabs.storage.DataStore.Destination dest = store.getWarpDest(name);
+        if (dest == null || dest.location == null) { p.sendMessage(plugin.getLang().tr("warps.not_found", "name", name)); return true; }
         if (!ensurePaid(p, "warp")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
+        String myServer = plugin.getConfig().getString("network.server_name", "local");
+        if (dest.server != null && !dest.server.equalsIgnoreCase(myServer)) {
+            com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server);
+            p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
+            return true;
+        }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().tr("warps.arrived", "name", name)));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, () -> p.sendMessage(plugin.getLang().tr("warps.arrived", "name", name)));
         return true;
     }
 
@@ -277,7 +302,11 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         List<String> list = store.listWarps();
         if (list.isEmpty()) { p.sendMessage(plugin.getLang().t("warps.none")); return true; }
         if (BedrockUtil.isBedrock(p)) {
-            p.sendMessage("§6" + plugin.getLang().t("menu.warps.title") + ": §f" + String.join(", ", list));
+            boolean ok = com.novamclabs.util.BedrockFormsUtil.showListCommandForm(plugin, p,
+                    plugin.getLang().t("menu.warps.title"), list, "warp");
+            if (!ok) {
+                p.sendMessage("§6" + plugin.getLang().t("menu.warps.title") + ": §f" + String.join(", ", list));
+            }
         } else {
             String title = plugin.getLang().t("menu.warps.title");
             Inventory inv = Bukkit.createInventory(p, 27, title);

@@ -78,4 +78,50 @@ public class BedrockFormsUtil {
             return false;
         }
     }
+
+    /**
+     * 显示列表选择表单（点击后执行命令）| Show a list selection form and run command on click
+     */
+    public static boolean showListCommandForm(StarTeleport plugin, Player player, String titleText, java.util.List<String> entries, String commandPrefix) {
+        if (!isFloodgatePresent()) return false;
+        try {
+            Class<?> apiClz = Class.forName("floodgate.api.FloodgateApi");
+            Object api = apiClz.getMethod("getInstance").invoke(null);
+            Class<?> formClz = Class.forName("org.geysermc.cumulus.form.SimpleForm");
+            Object builder = formClz.getMethod("builder").invoke(null);
+            java.lang.reflect.Method title = builder.getClass().getMethod("title", String.class);
+            java.lang.reflect.Method content = builder.getClass().getMethod("content", String.class);
+            java.lang.reflect.Method button = builder.getClass().getMethod("button", String.class);
+            title.invoke(builder, titleText);
+            content.invoke(builder, " ");
+            for (String s : entries) button.invoke(builder, s);
+            java.lang.reflect.Method valid = null;
+            for (java.lang.reflect.Method m : builder.getClass().getMethods()) {
+                if (m.getName().equals("validResultHandler") && m.getParameterCount() == 1) { valid = m; break; }
+            }
+            if (valid != null) {
+                java.util.function.BiConsumer<Object, Object> handler = (form, response) -> {
+                    try {
+                        int id = (int) response.getClass().getMethod("getClickedButtonId").invoke(response);
+                        if (id >= 0 && id < entries.size()) {
+                            String entry = entries.get(id);
+                            org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> player.performCommand(commandPrefix + " " + entry));
+                        }
+                    } catch (Throwable ignored) {}
+                };
+                valid.invoke(builder, handler);
+            }
+            java.lang.reflect.Method build = builder.getClass().getMethod("build");
+            Object form = build.invoke(builder);
+            java.lang.reflect.Method send = null;
+            for (java.lang.reflect.Method m : apiClz.getMethods()) {
+                if (m.getName().equals("sendForm") && m.getParameterCount() == 2) { send = m; break; }
+            }
+            if (send == null) return false;
+            send.invoke(api, player.getUniqueId(), form);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
 }

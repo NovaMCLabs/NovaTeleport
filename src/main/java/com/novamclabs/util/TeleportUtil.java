@@ -46,10 +46,12 @@ public class TeleportUtil {
 
     public static BukkitTask delayedTeleportWithAnimation(StarTeleport plugin, Player player, Location target, int delaySeconds, Runnable onComplete) {
         if (delaySeconds <= 0) {
+            if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPre(player, target);
             playPrepare(plugin, player, target);
             player.teleport(target);
             applyPostEffect(player, readPostEffectConfig(plugin));
             playAfter(plugin, player, target);
+            if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPost(player, target);
             if (onComplete != null) onComplete.run();
             return null;
         }
@@ -76,12 +78,14 @@ public class TeleportUtil {
 
                 if (remaining <= 0) {
                     cancel();
+                    if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPre(player, target);
                     if (animation) playInstant(plugin, player);
                     if (animation) playPrepare(plugin, player, target);
                     player.teleport(target);
                     if (plugin.getConfig().getBoolean("features.post_effect_enabled", true))
                         applyPostEffect(player, readPostEffectConfig(plugin));
                     if (animation) playAfter(plugin, player, target);
+                    if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPost(player, target);
                     if (onComplete != null) onComplete.run();
                 }
                 remaining--;

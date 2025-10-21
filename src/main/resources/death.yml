@@ -1,0 +1,13 @@
+# 死亡回溯配置（中英）Death-back configuration
+enabled: true
+cooldown_seconds: 0
+teleport_delay_seconds: 5
+move_cancel: true
+restrict_interact: true
+auto_prompt:
+  bedrock: true
+  java: true
+use_bossbar: false
+cost:
+  vault: 0
+  xp_levels: 0

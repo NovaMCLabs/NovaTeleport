@@ -119,3 +119,14 @@ party.left: "§eYou left the party."
 party.tp.start: "§eLeader is summoning, teleporting soon..."
 party.tp.done: "§aTeleported to the leader."
 party.tp.leader: "§aParty teleport initiated."
+
+# Stele
+stele.activated: "§aYou attuned to this stele!"
+stele.need_item_or_xp: "§cMissing required item or XP."
+stele.menu: "Teleportation Steles"
+stele.none: "§eNo steles available."
+
+# Death-back
+death.prompt: "Return to your death location?"
+death.back_now: "Back now"
+death.none: "§eNo death location recorded."

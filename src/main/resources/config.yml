@@ -9,6 +9,16 @@ general:
   language: zh_CN
   debug: false
 
+# 网络与跨服设置 | Network & cross-server
+network:
+  server_name: local
+  redis:
+    enabled: false
+    host: 127.0.0.1
+    port: 6379
+    password: ""
+    channel: novateleport
+
 # 世界阈值自动传送
 auto_world_teleport:
   # 触发后倒计时（秒）
@@ -29,6 +39,17 @@ auto_world_teleport:
 # 指令统一延迟（秒）
 commands:
   teleport_delay_seconds: 3
+
+# 回城设置（本服或跨服）| City/hub settings
+city:
+  mode: local # local | proxy
+  local:
+    world: world
+    x: 0.5
+    y: 80
+    z: 0.5
+  proxy:
+    server: hub
 
 # 家系统
 homes:

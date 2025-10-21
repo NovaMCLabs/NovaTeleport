@@ -167,3 +167,15 @@ commands:
     description: 组队系统
     usage: /party <create|invite|accept|leave|tp>
     permission: novateleport.command.party
+  stele:
+    description: 传送石碑系统
+    usage: /stele <list|locate|create|remove|travel|activatefor>
+    permission: novateleport.admin
+  deathback:
+    description: 回到上次死亡位置
+    usage: /deathback
+    permission: novateleport.command.back
+  forcetp:
+    description: 强制传送离线玩家（控制台可用）
+    usage: /forcetp <player> <world> <x> <y> <z>
+    permission: novateleport.admin

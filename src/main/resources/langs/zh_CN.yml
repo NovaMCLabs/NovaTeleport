@@ -119,3 +119,14 @@ party.left: "§e你已离开队伍。"
 party.tp.start: "§e队长正在召集，即将传送..."
 party.tp.done: "§a已传送到队长身边。"
 party.tp.leader: "§a已召集队伍传送。"
+
+# 传送石碑 Stele
+stele.activated: "§a你已激活此传送石碑！"
+stele.need_item_or_xp: "§c缺少激活所需物品或经验。"
+stele.menu: "传送石碑网络"
+stele.none: "§e暂无可用的传送石碑。"
+
+# 死亡回溯 Death-back
+death.prompt: "是否返回至死亡位置？"
+death.back_now: "立即返回"
+death.none: "§e未记录死亡位置。"

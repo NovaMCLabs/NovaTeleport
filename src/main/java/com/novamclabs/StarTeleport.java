@@ -26,6 +26,11 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private com.novamclabs.rtp.RtpPoolManager rtpPoolManager;
     private com.novamclabs.scrolls.ScrollManager scrollManager;
     private com.novamclabs.party.PartyManager partyManager;
+    private com.novamclabs.scripting.ScriptingManager scriptingManager;
+    private com.novamclabs.stele.SteleManager steleManager;
+    private com.novamclabs.death.DeathManager deathManager;
+    private com.novamclabs.cross.CrossServerService crossServerService;
+    private com.novamclabs.offline.OfflineTeleportManager offlineTeleportManager;
     // 使用 ConcurrentHashMap 来避免并发问题 | Use concurrent map to avoid concurrency issues
     private final Map<Player, BukkitTask> taskMap = new ConcurrentHashMap<>();
     // 记录玩家是否可以触发传送（用于控制重复触发）
@@ -65,15 +70,26 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         // 初始化语言系统
         this.lang = new com.novamclabs.lang.LanguageManager(this);
         this.lang.ensureDefaults("zh_CN","en_US");
-        // 初始化数据存储
-        this.dataStore = new com.novamclabs.storage.DataStore(getDataFolder());
-        // Vault 经济初始化
+        // 初始化数据存储 | init storage
+        String serverName = getConfig().getString("network.server_name", "local");
+        this.dataStore = new com.novamclabs.storage.DataStore(getDataFolder(), serverName);
+        // Vault 经济初始化 | economy init
         com.novamclabs.util.EconomyUtil.setup(this);
-        // 动画/传送门/RTP池/卷轴 初始化
+        // 脚本管理 | scripting manager
+        this.scriptingManager = new com.novamclabs.scripting.ScriptingManager(this);
+        // 动画/传送门/RTP池/卷轴 初始化 | init subsystems
         this.animationManager = new com.novamclabs.animations.AnimationManager(this);
         this.portalManager = new com.novamclabs.portals.PortalManager(this);
         this.rtpPoolManager = new com.novamclabs.rtp.RtpPoolManager(this);
         this.scrollManager = new com.novamclabs.scrolls.ScrollManager(this);
+        // 跨服服务（Redis 可选）| Cross-server service (Redis optional)
+        this.crossServerService = new com.novamclabs.cross.CrossServerService(this);
+        // 离线传送队列 | Offline teleport queue
+        this.offlineTeleportManager = new com.novamclabs.offline.OfflineTeleportManager(this);
+        // 死亡回溯 | death/back system
+        this.deathManager = new com.novamclabs.death.DeathManager(this);
+        // 传送石碑 | Teleportation Stele
+        this.steleManager = new com.novamclabs.stele.SteleManager(this);
 
         loadConfig();
         getServer().getPluginManager().registerEvents(this, this);
@@ -108,6 +124,16 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             // 内置组队系统 | built-in party system
             this.partyManager = new com.novamclabs.party.PartyManager(this);
             getCommand("party").setExecutor(new com.novamclabs.party.PartyCommand(this, partyManager));
+        }
+        // 其它独立命令注册 | other commands
+        if (getCommand("stele") != null) {
+            getCommand("stele").setExecutor(new com.novamclabs.stele.SteleCommand(this, steleManager));
+        }
+        if (getCommand("deathback") != null) {
+            getCommand("deathback").setExecutor(deathManager);
+        }
+        if (getCommand("forcetp") != null) {
+            getCommand("forcetp").setExecutor(offlineTeleportManager);
         }
         getLogger().info(lang.t("plugin.startup"));
     }
@@ -354,6 +380,8 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     }
     public com.novamclabs.animations.AnimationManager getAnimationManager() { return this.animationManager; }
     public com.novamclabs.rtp.RtpPoolManager getRtpPoolManager() { return this.rtpPoolManager; }
+    public com.novamclabs.scripting.ScriptingManager getScriptingManager() { return this.scriptingManager; }
+    public com.novamclabs.cross.CrossServerService getCrossServerService() { return this.crossServerService; }
     public void setDebug(boolean enabled) { this.debug = enabled; }
     
     /**

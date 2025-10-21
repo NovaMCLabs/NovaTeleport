@@ -60,8 +60,15 @@ public class BaseCommandRouter implements CommandExecutor, TabCompleter {
             case "spawn": return route(sender, "spawn", rest);
             case "back": return route(sender, "back", rest);
             case "rtp": return route(sender, "rtp", rest);
+            case "rtpgui": return route(sender, "rtpgui", rest);
             case "tpmenu": return route(sender, "tpmenu", rest);
             case "city": return route(sender, "city", rest);
+            case "tpanimation": return route(sender, "tpanimation", rest);
+            case "scroll": return route(sender, "scroll", rest);
+            case "party": return route(sender, "party", rest);
+            case "stele": return route(sender, "stele", rest);
+            case "deathback": return route(sender, "deathback", rest);
+            case "forcetp": return route(sender, "forcetp", rest);
             default:
                 sender.sendMessage(plugin.getLang().t("base.unknown"));
                 return true;
@@ -76,13 +83,13 @@ public class BaseCommandRouter implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        List<String> root = Arrays.asList("tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","homes","setwarp","warp","delwarp","warps","spawn","back","rtp","tpmenu","city");
+        List<String> root = Arrays.asList("tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","homes","setwarp","warp","delwarp","warps","spawn","back","rtp","rtpgui","tpmenu","city","tpanimation","scroll","party","stele","deathback","forcetp");
         if (args.length == 1) {
             List<String> out = new ArrayList<>();
             for (String s : root) if (s.startsWith(args[0].toLowerCase())) out.add(s);
             return out;
         }
-        // 简化：不做更深层补全
+        // 暂不提供更深层补全（可在未来扩展）| Deep tab-completion can be added in future
         return new ArrayList<>();
     }
 }
