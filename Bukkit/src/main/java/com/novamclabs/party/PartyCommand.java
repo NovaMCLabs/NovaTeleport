@@ -72,14 +72,26 @@ public class PartyCommand implements CommandExecutor {
             }
             case "tp": {
                 PartyManager.Party party = manager.getParty(p.getUniqueId());
-                if (party == null || !manager.isLeader(p.getUniqueId())) { p.sendMessage(plugin.getLang().t("party.not_leader")); return true; }
+                java.util.Set<java.util.UUID> targetMembers = new java.util.HashSet<>();
+                boolean isLeader = false;
+                if (party != null) {
+                    isLeader = manager.isLeader(p.getUniqueId());
+                    targetMembers.addAll(party.members);
+                } else {
+                    // 外部组队插件适配 | external party plugins
+                    com.novamclabs.party.integration.PartyBridge.PartyInfo info = com.novamclabs.party.integration.PartyBridge.findFor(p);
+                    if (info != null) {
+                        isLeader = p.getUniqueId().equals(info.leader);
+                        targetMembers.addAll(info.members);
+                    }
+                }
+                if (!isLeader) { p.sendMessage(plugin.getLang().t("party.not_leader")); return true; }
                 int delay = manager.getTeleportDelay();
                 int idx = 0;
-                for (UUID u : party.members) {
+                for (UUID u : targetMembers) {
                     Player m = Bukkit.getPlayer(u);
                     if (m == null || m.getUniqueId().equals(p.getUniqueId())) continue;
-                    // 智能分散：在队长周围按圆形散开 | smart spread around leader
-                    double angle = (Math.PI * 2 / Math.max(1, party.members.size())) * (idx++);
+                    double angle = (Math.PI * 2 / Math.max(1, targetMembers.size())) * (idx++);
                     Location dest = p.getLocation().clone().add(Math.cos(angle) * 1.5, 0, Math.sin(angle) * 1.5);
                     TeleportUtil.delayedTeleportWithAnimation(plugin, m, dest, delay, () -> m.sendMessage(plugin.getLang().t("party.tp.done")));
                     m.sendMessage(plugin.getLang().t("party.tp.start"));
