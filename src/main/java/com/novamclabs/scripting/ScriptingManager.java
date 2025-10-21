@@ -103,9 +103,25 @@ public class ScriptingManager {
         // MythicMobs/MMOCore 技能桥 | MythicMobs/MMOCore skill bridge via reflection
         public void mythicSkill(String name) {
             try {
-                Class<?> api = Class.forName("io.lumine.mythic.api.skills.SkillManager");
+                Class<?> mythic = Class.forName("io.lumine.xikage.mythicmobs.MythicMobs");
+                Object inst = mythic.getMethod("inst").invoke(null);
+                Object apiHelper = inst.getClass().getMethod("getAPIHelper").invoke(inst);
+                apiHelper.getClass().getMethod("castSkill", org.bukkit.entity.Entity.class, String.class).invoke(apiHelper, player, name);
+            } catch (Throwable t) {
+                try {
+                    Class<?> mythic = Class.forName("io.lumine.mythic.bukkit.MythicBukkit");
+                    Object inst = mythic.getMethod("inst").invoke(null);
+                    Object apiHelper = inst.getClass().getMethod("getAPIHelper").invoke(inst);
+                    apiHelper.getClass().getMethod("castSkill", org.bukkit.entity.Entity.class, String.class).invoke(apiHelper, player, name);
+                } catch (Throwable ignored) {}
+            }
+        }
+        public void mmocoreSkill(String name) {
+            try {
+                Class<?> api = Class.forName("net.Indyuce.mmocore.api.player.PlayerData");
+                Object pd = api.getMethod("get", java.util.UUID.class).invoke(null, player.getUniqueId());
+                pd.getClass().getMethod("castSkill", String.class).invoke(pd, name);
             } catch (Throwable ignored) {}
         }
-        public void mmocoreSkill(String name) { /* 可在此扩展 */ }
     }
 }

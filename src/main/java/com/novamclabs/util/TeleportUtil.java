@@ -48,6 +48,10 @@ public class TeleportUtil {
         if (delaySeconds <= 0) {
             if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPre(player, target);
             playPrepare(plugin, player, target);
+            if (!com.novamclabs.util.RegionGuardUtil.canEnter(player, target)) {
+                player.sendMessage(plugin.getLang().t("command.no_permission"));
+                return null;
+            }
             player.teleport(target);
             applyPostEffect(player, readPostEffectConfig(plugin));
             playAfter(plugin, player, target);
@@ -81,6 +85,10 @@ public class TeleportUtil {
                     if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPre(player, target);
                     if (animation) playInstant(plugin, player);
                     if (animation) playPrepare(plugin, player, target);
+                    if (!com.novamclabs.util.RegionGuardUtil.canEnter(player, target)) {
+                        player.sendMessage(plugin.getLang().t("command.no_permission"));
+                        return;
+                    }
                     player.teleport(target);
                     if (plugin.getConfig().getBoolean("features.post_effect_enabled", true))
                         applyPostEffect(player, readPostEffectConfig(plugin));

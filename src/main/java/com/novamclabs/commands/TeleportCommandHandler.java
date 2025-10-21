@@ -388,11 +388,20 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         if (BedrockUtil.isBedrock(p)) {
-            p.sendMessage(plugin.getLang().t("bedrock.menu.header"));
-            p.sendMessage(plugin.getLang().t("bedrock.menu.tip.homes"));
-            p.sendMessage(plugin.getLang().t("bedrock.menu.tip.warps"));
-            p.sendMessage(plugin.getLang().t("bedrock.menu.tip.rtp"));
-            p.sendMessage(plugin.getLang().t("bedrock.menu.tip.back"));
+            java.util.List<String> entries = java.util.Arrays.asList(
+                    plugin.getLang().t("menu.main.homes"),
+                    plugin.getLang().t("menu.main.warps"),
+                    plugin.getLang().t("menu.main.rtp"),
+                    plugin.getLang().t("menu.main.back")
+            );
+            boolean ok = com.novamclabs.util.BedrockFormsUtil.showListCommandForm(plugin, p, plugin.getLang().t("menu.main.title"), entries, "ntp");
+            if (!ok) {
+                p.sendMessage(plugin.getLang().t("bedrock.menu.header"));
+                p.sendMessage(plugin.getLang().t("bedrock.menu.tip.homes"));
+                p.sendMessage(plugin.getLang().t("bedrock.menu.tip.warps"));
+                p.sendMessage(plugin.getLang().t("bedrock.menu.tip.rtp"));
+                p.sendMessage(plugin.getLang().t("bedrock.menu.tip.back"));
+            }
         } else {
             String title = plugin.getLang().t("menu.main.title");
             Inventory inv = Bukkit.createInventory(p, 27, title);

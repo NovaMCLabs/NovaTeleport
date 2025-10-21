@@ -11,3 +11,6 @@ use_bossbar: false
 cost:
   vault: 0
   xp_levels: 0
+auto_random:
+  enabled: false
+  world: ""

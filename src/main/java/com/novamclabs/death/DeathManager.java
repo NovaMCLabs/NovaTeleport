@@ -53,6 +53,20 @@ public class DeathManager implements Listener, CommandExecutor {
     public void onRespawn(PlayerRespawnEvent e) {
         if (!conf.getBoolean("enabled", true)) return;
         Player p = e.getPlayer();
+        // 自动随机传送 | auto random teleport
+        if (conf.getBoolean("auto_random.enabled", false)) {
+            org.bukkit.World w = null;
+            String wn = conf.getString("auto_random.world", "");
+            if (wn != null && !wn.isEmpty()) w = Bukkit.getWorld(wn);
+            if (w == null) w = p.getWorld();
+            org.bukkit.Location dest = plugin.getRtpPoolManager() != null ? plugin.getRtpPoolManager().poll(w) : null;
+            if (dest == null) dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, w, new java.util.Random());
+            if (dest != null) {
+                int delay = conf.getInt("teleport_delay_seconds", plugin.getConfig().getInt("commands.teleport_delay_seconds", 3));
+                TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
+                return;
+            }
+        }
         boolean bedrock = com.novamclabs.util.BedrockUtil.isBedrock(p);
         boolean show = bedrock ? conf.getBoolean("auto_prompt.bedrock", true) : conf.getBoolean("auto_prompt.java", true);
         if (!show) return;

@@ -1,0 +1,7 @@
+{
+  "id": "novateleportproxy",
+  "name": "NovaTeleportProxy",
+  "version": "1.0.0",
+  "main": "com.novamclabs.proxy.NovaTeleportVelocity",
+  "authors": ["NovaMCLabs"]
+}
