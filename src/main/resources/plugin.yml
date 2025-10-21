@@ -50,6 +50,24 @@ permissions:
   novateleport.command.tpmenu:
     description: 使用 /tpmenu 打开菜单
     default: true
+  novateleport.economy.bypass:
+    description: 免除传送费用
+    default: op
+  novateleport.animation.select:
+    description: 允许玩家选择动画风格
+    default: true
+  novateleport.animation.tech:
+    description: 解锁科技风格动画
+    default: op
+  novateleport.animation.natural:
+    description: 解锁自然风格动画
+    default: op
+  novateleport.scroll.bind:
+    description: 允许玩家绑定传送卷轴
+    default: op
+  novateleport.command.party:
+    description: 使用 /party 组队命令
+    default: true
 
 commands:
   stp:
@@ -128,3 +146,24 @@ commands:
     description: 打开传送菜单
     usage: /tpmenu
     permission: novateleport.command.tpmenu
+  tpanimation:
+    description: 选择传送动画风格
+    usage: /tpanimation select <magic|tech|natural>
+    permission: novateleport.animation.select
+  scroll:
+    description: 传送卷轴指令
+    usage: /scroll bind <home|warp> <名称>
+    permission: novateleport.scroll.bind
+  city:
+    description: 回城
+    usage: /city
+    permission: novateleport.command.spawn
+    aliases: [hub]
+  novateleport:
+    description: NovaTeleport 主命令
+    usage: /novateleport <子命令>
+    aliases: [ntp, novatp]
+  party:
+    description: 组队系统
+    usage: /party <create|invite|accept|leave|tp>
+    permission: novateleport.command.party

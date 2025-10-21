@@ -1,0 +1,11 @@
+# 传送卷轴 scrolls.yml
+# 你可以自定义未绑定和已绑定卷轴的材质、名称与描述。
+# 卷轴通过指令 /scroll bind <home|warp> <名称> 生成，右键使用消耗并传送。
+
+unbound:
+  material: PAPER
+  name: "§e未绑定的传送卷轴"
+
+bound:
+  material: PAPER
+  name: "§a传送卷轴: §f{target}"

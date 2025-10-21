@@ -21,7 +21,12 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private int teleportDelay;
     private com.novamclabs.storage.DataStore dataStore;
     private com.novamclabs.lang.LanguageManager lang;
-    // 使用 ConcurrentHashMap 来避免并发问题
+    private com.novamclabs.animations.AnimationManager animationManager;
+    private com.novamclabs.portals.PortalManager portalManager;
+    private com.novamclabs.rtp.RtpPoolManager rtpPoolManager;
+    private com.novamclabs.scrolls.ScrollManager scrollManager;
+    private com.novamclabs.party.PartyManager partyManager;
+    // 使用 ConcurrentHashMap 来避免并发问题 | Use concurrent map to avoid concurrency issues
     private final Map<Player, BukkitTask> taskMap = new ConcurrentHashMap<>();
     // 记录玩家是否可以触发传送（用于控制重复触发）
     private final Map<Player, Boolean> canTriggerMap = new ConcurrentHashMap<>();
@@ -62,17 +67,47 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         this.lang.ensureDefaults("zh_CN","en_US");
         // 初始化数据存储
         this.dataStore = new com.novamclabs.storage.DataStore(getDataFolder());
+        // Vault 经济初始化
+        com.novamclabs.util.EconomyUtil.setup(this);
+        // 动画/传送门/RTP池/卷轴 初始化
+        this.animationManager = new com.novamclabs.animations.AnimationManager(this);
+        this.portalManager = new com.novamclabs.portals.PortalManager(this);
+        this.rtpPoolManager = new com.novamclabs.rtp.RtpPoolManager(this);
+        this.scrollManager = new com.novamclabs.scrolls.ScrollManager(this);
+
         loadConfig();
         getServer().getPluginManager().registerEvents(this, this);
+        getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
         getCommand("stp").setExecutor(this);
-        // 注册传送相关命令
+        // 注册传送相关命令 | Register commands
         com.novamclabs.commands.TeleportCommandHandler handler = new com.novamclabs.commands.TeleportCommandHandler(this);
-        String[] cmds = {"tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","homes","setwarp","warp","delwarp","warps","spawn","back","rtp","tpmenu"};
+        String[] cmds = {"tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","homes","setwarp","warp","delwarp","warps","spawn","back","rtp","rtpgui","tpmenu"};
         for (String c : cmds) {
             if (getCommand(c) != null) {
                 getCommand(c).setExecutor(handler);
                 getCommand(c).setTabCompleter(handler);
             }
+        }
+        if (getCommand("city") != null) {
+            getCommand("city").setExecutor(new com.novamclabs.commands.CityCommand(this));
+            if (getCommand("hub") != null) getCommand("hub").setExecutor(new com.novamclabs.commands.CityCommand(this));
+        }
+        // 额外命令
+        if (getCommand("tpanimation") != null) {
+            getCommand("tpanimation").setExecutor(new com.novamclabs.animations.AnimationCommand(this, animationManager));
+        }
+        if (getCommand("scroll") != null) {
+            getCommand("scroll").setExecutor(new com.novamclabs.scrolls.ScrollCommand(this, scrollManager));
+        }
+        if (getCommand("novateleport") != null) {
+            com.novamclabs.commands.BaseCommandRouter router = new com.novamclabs.commands.BaseCommandRouter(this, handler);
+            getCommand("novateleport").setExecutor(router);
+            getCommand("novateleport").setTabCompleter(router);
+        }
+        if (getCommand("party") != null) {
+            // 内置组队系统 | built-in party system
+            this.partyManager = new com.novamclabs.party.PartyManager(this);
+            getCommand("party").setExecutor(new com.novamclabs.party.PartyCommand(this, partyManager));
         }
         getLogger().info(lang.t("plugin.startup"));
     }
@@ -92,9 +127,10 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
      */
     private void reloadPluginConfig() {
         reloadConfig();
-        // 重载语言
-        String lc = getConfig().getString("language", "zh_CN");
+        // 重载语言与经济
+        String lc = getConfig().getString("general.language", getConfig().getString("language", "zh_CN"));
         if (this.lang != null) this.lang.load(lc);
+        com.novamclabs.util.EconomyUtil.setup(this);
         loadConfig();
     }
     
@@ -103,10 +139,10 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
      */
     private void loadConfig() {
         // 语言
-        String lc = getConfig().getString("language", "zh_CN");
+        String lc = getConfig().getString("general.language", getConfig().getString("language", "zh_CN"));
         if (this.lang != null) this.lang.load(lc);
-        debug = getConfig().getBoolean(CONFIG_DEBUG, false);
-        teleportDelay = getConfig().getInt(CONFIG_DELAY, 5);
+        debug = getConfig().getBoolean("general.debug", getConfig().getBoolean(CONFIG_DEBUG, false));
+        teleportDelay = getConfig().getInt("auto_world_teleport." + CONFIG_DELAY, getConfig().getInt(CONFIG_DELAY, 5));
         if (debug) {
             getLogger().info(lang.t("debug.enabled"));
             getLogger().info(lang.tr("debug.delay", "seconds", teleportDelay));
@@ -208,7 +244,10 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
      * 查找适用的传送规则
      */
     private TeleportRule findTeleportRule(String currentWorldName) {
-        ConfigurationSection rules = getConfig().getConfigurationSection(CONFIG_WORLDS);
+        ConfigurationSection rules = getConfig().getConfigurationSection("auto_world_teleport." + CONFIG_WORLDS);
+        if (rules == null) {
+            rules = getConfig().getConfigurationSection(CONFIG_WORLDS);
+        }
         if (rules == null) {
             return null;
         }
@@ -216,9 +255,10 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         for (String key : rules.getKeys(false)) {
             ConfigurationSection rule = rules.getConfigurationSection(key);
             if (rule != null && currentWorldName.equals(rule.getString("world_from"))) {
+                int defaultThreshold = getConfig().getInt("auto_world_teleport." + CONFIG_THRESHOLD, getConfig().getInt(CONFIG_THRESHOLD, -62));
                 return new TeleportRule(
                     rule.getString("world_to"),
-                    rule.getInt(CONFIG_THRESHOLD, getConfig().getInt(CONFIG_THRESHOLD, -62))
+                    rule.getInt(CONFIG_THRESHOLD, defaultThreshold)
                 );
             }
         }
@@ -248,8 +288,10 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             Boolean canTrigger = canTriggerMap.get(player);
             if (canTrigger == null || canTrigger) {
                 // 首次触发或允许触发
-                startTeleport(player, rule);
-                canTriggerMap.put(player, false); // 防止重复触发
+                boolean started = startTeleport(player, rule);
+                if (started) {
+                    canTriggerMap.put(player, false); // 防止重复触发
+                }
             }
         } else {
             // 检查是否穿过阈值线（从一侧移动到另一侧）
@@ -268,12 +310,20 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     
     /**
      * 开始传送流程
+     * @return 是否成功开始（可用于控制重复触发）
      */
-    private void startTeleport(Player player, TeleportRule rule) {
+    private boolean startTeleport(Player player, TeleportRule rule) {
         World targetWorld = getServer().getWorld(rule.targetWorldName);
         if (targetWorld == null) {
             getLogger().log(Level.WARNING, lang.tr("warn.world_not_loaded", "world", rule.targetWorldName));
-            return;
+            return false;
+        }
+
+        // 经济扣费（自动阈值传送）
+        double cost = com.novamclabs.util.EconomyUtil.getCost(this, "auto_world_teleport");
+        if (!com.novamclabs.util.EconomyUtil.charge(this, player, cost)) {
+            player.sendMessage(lang.tr("economy.not_enough", "amount", com.novamclabs.util.EconomyUtil.format(cost)));
+            return false;
         }
 
         // 记录玩家开始传送时的位置
@@ -293,6 +343,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
                     "y", String.format("%.2f", player.getLocation().getY()),
                     "z", String.format("%.2f", player.getLocation().getZ())));
         }
+        return true;
     }
 
     public com.novamclabs.storage.DataStore getDataStore() {
@@ -301,6 +352,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     public com.novamclabs.lang.LanguageManager getLang() {
         return lang;
     }
+    public com.novamclabs.animations.AnimationManager getAnimationManager() { return this.animationManager; }
+    public com.novamclabs.rtp.RtpPoolManager getRtpPoolManager() { return this.rtpPoolManager; }
+    public void setDebug(boolean enabled) { this.debug = enabled; }
     
     /**
      * 调度传送任务

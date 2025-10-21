@@ -1,0 +1,4 @@
+# Party settings | 组队设置
+max_members: 4
+invite_expire_seconds: 120
+teleport_delay: 5

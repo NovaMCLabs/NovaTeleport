@@ -85,13 +85,24 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         outgoing.put(requester.getUniqueId(), req);
 
         requester.sendMessage(plugin.getLang().tr("tpa.sent", "target", target.getName(), "seconds", 60));
-        // 目标收到请求
-        if (here) {
-            target.sendMessage(plugin.getLang().tr("tpa.prompt.to_here", "requester", requester.getName()));
+        // 提示目标 | Prompt target
+        if (com.novamclabs.util.BedrockUtil.isBedrock(target)) {
+            boolean sent = com.novamclabs.util.BedrockFormsUtil.showTpaRequestForm(plugin, target, requester.getName(), here);
+            if (!sent) {
+                target.sendMessage(plugin.getLang().tr(here?"tpa.prompt.to_here":"tpa.prompt.to_you", "requester", requester.getName()));
+            }
         } else {
-            target.sendMessage(plugin.getLang().tr("tpa.prompt.to_you", "requester", requester.getName()));
+            // Java 版：可点击消息 | Clickable chat for Java
+            net.md_5.bungee.api.chat.TextComponent yes = new net.md_5.bungee.api.chat.TextComponent(plugin.getLang().t("tpa.click.accept"));
+            yes.setColor(net.md_5.bungee.api.ChatColor.GREEN);
+            yes.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/tpaccept"));
+            net.md_5.bungee.api.chat.TextComponent no = new net.md_5.bungee.api.chat.TextComponent(plugin.getLang().t("tpa.click.deny"));
+            no.setColor(net.md_5.bungee.api.ChatColor.RED);
+            no.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/tpdeny"));
+            net.md_5.bungee.api.chat.TextComponent spacer = new net.md_5.bungee.api.chat.TextComponent(" ");
+            target.spigot().sendMessage(yes, spacer, no);
+            target.sendMessage(plugin.getLang().tr(here?"tpa.prompt.to_here":"tpa.prompt.to_you", "requester", requester.getName()));
         }
-        // Bedrock 模态表单（若可用）省略：无依赖时退化为聊天提示。
         return true;
     }
 
@@ -106,6 +117,11 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         // 传送对象
         Player mover = req.here ? target : requester;
         Location dest = (req.here ? requester : target).getLocation();
+        // 经济扣费
+        String actionKey = req.here ? "tpahere" : "tpa";
+        if (!ensurePaid(mover, actionKey)) {
+            return true;
+        }
         try { if (store != null) store.setBack(mover.getUniqueId(), mover.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         BukkitTask task = TeleportUtil.delayedTeleportWithAnimation(plugin, mover, dest, delay, () -> {
@@ -181,6 +197,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         String name = args.length >= 1 ? args[0] : "home";
         Location loc = store.getHome(p.getUniqueId(), name);
         if (loc == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
+        if (!ensurePaid(p, "home")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().t("homes.welcome")));
@@ -238,6 +255,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         String name = args[0];
         Location loc = store.getWarp(name);
         if (loc == null) { p.sendMessage(plugin.getLang().tr("warps.not_found", "name", name)); return true; }
+        if (!ensurePaid(p, "warp")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().tr("warps.arrived", "name", name)));
@@ -279,6 +297,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         Location loc = p.getWorld().getSpawnLocation();
+        if (!ensurePaid(p, "spawn")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().t("spawn.done")));
@@ -290,6 +309,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         Player p = (Player) sender;
         Location back = store.getBack(p.getUniqueId());
         if (back == null) { p.sendMessage(plugin.getLang().t("back.none")); return true; }
+        if (!ensurePaid(p, "back")) { return true; }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, back, delay, () -> p.sendMessage(plugin.getLang().t("back.done")));
         return true;
@@ -299,8 +319,15 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         World world = p.getWorld();
-        Location dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random());
+        Location dest = null;
+        if (plugin.getRtpPoolManager() != null) {
+            dest = plugin.getRtpPoolManager().poll(world);
+        }
+        if (dest == null) {
+            dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random());
+        }
         if (dest == null) { p.sendMessage(plugin.getLang().t("rtp.no_safe")); return true; }
+        if (!ensurePaid(p, "rtp")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
@@ -354,6 +381,15 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         im.setDisplayName(name);
         it.setItemMeta(im);
         return it;
+    }
+
+    private boolean ensurePaid(Player p, String actionKey) {
+        double cost = com.novamclabs.util.EconomyUtil.getCost(plugin, actionKey);
+        if (!com.novamclabs.util.EconomyUtil.charge(plugin, p, cost)) {
+            p.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", com.novamclabs.util.EconomyUtil.format(cost)));
+            return false;
+        }
+        return true;
     }
 
     @EventHandler
@@ -415,6 +451,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 if (dest == null) {
                     p.sendMessage(plugin.getLang().t("rtp.no_safe"));
                 } else {
+                    if (!ensurePaid(p, "rtp")) { return; }
                     try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
                     int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
                     com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));

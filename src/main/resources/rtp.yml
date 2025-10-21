@@ -1,0 +1,32 @@
+# 高性能随机传送 rtp.yml
+# 后台异步预生成坐标池，玩家执行 /rtp 时优先从池中取坐标，实现瞬时传送。
+
+# 预生成坐标池大小
+pregen_pool_size: 50
+
+worlds:
+  world:
+    enabled: true
+    center_x: 0
+    center_z: 0
+    min_radius: 500
+    max_radius: 5000
+    biome_blacklist:
+      - "OCEAN"
+      - "DEEP_OCEAN"
+  nether:
+    enabled: false
+
+# 可配置的禁止降落方块（脚下不能是这些）
+safe_landing_note: "脚下不能为以下方块"
+unsafe_landing_blocks:
+  - "LAVA"
+  - "WATER"
+  - "FIRE"
+  - "CACTUS"
+  - "MAGMA_BLOCK"
+  - "AIR"
+  - "VOID_AIR"
+  - "CAVE_AIR"
+  - "SWEET_BERRY_BUSH"
+  - "WITHER_ROSE"
