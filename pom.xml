@@ -12,18 +12,9 @@
     <modules>
         <module>Sqlit-Lib</module>
         <module>Bukkit</module>
+        <module>BungeeCore</module>
+        <module>Velocity</module>
     </modules>
-
-    <profiles>
-        <profile>
-            <id>with-proxy</id>
-            <modules>
-                <module>BungeeCore</module>
-                <module>Velocity</module>
-                <module>AllInOne</module>
-            </modules>
-        </profile>
-    </profiles>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -68,6 +59,20 @@
                                     <version>${project.version}</version>
                                     <type>jar</type>
                                     <destFileName>NovaTeleport-Bukkit.jar</destFileName>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.novamclabs</groupId>
+                                    <artifactId>NovaTeleport-Bungee</artifactId>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <destFileName>NovaTeleport-Bungee.jar</destFileName>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.novamclabs</groupId>
+                                    <artifactId>NovaTeleport-Velocity</artifactId>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <destFileName>NovaTeleport-Velocity.jar</destFileName>
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.novamclabs</groupId>

@@ -97,7 +97,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         getCommand("stp").setExecutor(this);
         // 注册传送相关命令 | Register commands
         com.novamclabs.commands.TeleportCommandHandler handler = new com.novamclabs.commands.TeleportCommandHandler(this);
-        String[] cmds = {"tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","homes","setwarp","warp","delwarp","warps","spawn","back","rtp","rtpgui","tpmenu"};
+        String[] cmds = {"tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","setwarp","warp","delwarp","spawn","back","rtp"};
         for (String c : cmds) {
             if (getCommand(c) != null) {
                 getCommand(c).setExecutor(handler);
@@ -125,6 +125,12 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             this.partyManager = new com.novamclabs.party.PartyManager(this);
             getCommand("party").setExecutor(new com.novamclabs.party.PartyCommand(this, partyManager));
         }
+        // 外部队伍适配器 | external party adapter
+        com.novamclabs.party.adapter.PartyAdapterManager adapterMgr = new com.novamclabs.party.adapter.PartyAdapterManager();
+        adapterMgr.detectAndRegister(this, () -> com.novamclabs.party.PartyNameDisplay.refreshAll(adapterMgr.getActive()));
+        // 初始刷新 & 定时刷新（兜底）
+        com.novamclabs.party.PartyNameDisplay.refreshAll(adapterMgr.getActive());
+        getServer().getScheduler().runTaskTimer(this, () -> com.novamclabs.party.PartyNameDisplay.refreshAll(adapterMgr.getActive()), 200L, 200L);
         // 其它独立命令注册 | other commands
         if (getCommand("stele") != null) {
             getCommand("stele").setExecutor(new com.novamclabs.stele.SteleCommand(this, steleManager));

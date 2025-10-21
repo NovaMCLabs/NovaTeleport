@@ -2,7 +2,7 @@ name: NovaTeleport
 version: 1.3
 main: com.novamclabs.StarTeleport
 api-version: 1.16
-softdepend: [Vault, PlaceholderAPI, floodgate]
+softdepend: [Vault, PlaceholderAPI, floodgate, Geyser, Parties, BetterTeams, SimpleClans, Factions, Guilds, WorldGuard, PlotSquared, Residence, Lands]
 
 permissions:
   novateleport.pass:
@@ -46,9 +46,6 @@ permissions:
     default: true
   novateleport.command.rtp:
     description: 使用 /rtp
-    default: true
-  novateleport.command.tpmenu:
-    description: 使用 /tpmenu 打开菜单
     default: true
   novateleport.economy.bypass:
     description: 免除传送费用
