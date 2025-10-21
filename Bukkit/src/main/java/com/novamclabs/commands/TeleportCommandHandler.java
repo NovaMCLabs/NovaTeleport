@@ -366,6 +366,26 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     private boolean handleRtpGui(CommandSender sender) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
+        if (BedrockUtil.isBedrock(p)) {
+            int defaultRadius = plugin.getConfig().getInt("rtp.radius", 2000);
+            rtpRadiusChoices.putIfAbsent(p.getUniqueId(), defaultRadius);
+            int current = rtpRadiusChoices.get(p.getUniqueId());
+            int step = plugin.getConfig().getInt("rtp.gui.step", 500);
+            int max = com.novamclabs.util.RTPUtil.loadSettings(plugin, p.getWorld()).radius;
+            com.novamclabs.util.BedrockFormsUtil.showRtpRadiusForm(plugin, p, current, step, max, (val) -> {
+                rtpRadiusChoices.put(p.getUniqueId(), val);
+                org.bukkit.Location dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, p.getWorld(), new java.util.Random(), val);
+                if (dest == null) {
+                    p.sendMessage(plugin.getLang().t("rtp.no_safe"));
+                } else {
+                    if (!ensurePaid(p, "rtp")) return;
+                    try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
+                    int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
+                    com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
+                }
+            });
+            return true;
+        }
         openRtpGui(p);
         return true;
     }

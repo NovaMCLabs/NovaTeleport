@@ -124,4 +124,97 @@ public class BedrockFormsUtil {
             return false;
         }
     }
+
+    public static boolean showModalConfirm(StarTeleport plugin, Player player, String title, String content, String yes, String no, Runnable onYes) {
+        if (!isFloodgatePresent()) return false;
+        try {
+            Class<?> apiClz = Class.forName("floodgate.api.FloodgateApi");
+            Object api = apiClz.getMethod("getInstance").invoke(null);
+            Class<?> formClz = Class.forName("org.geysermc.cumulus.form.ModalForm");
+            Object builder = formClz.getMethod("builder").invoke(null);
+            java.lang.reflect.Method titleM = builder.getClass().getMethod("title", String.class);
+            java.lang.reflect.Method contentM = builder.getClass().getMethod("content", String.class);
+            java.lang.reflect.Method b1 = builder.getClass().getMethod("button1", String.class);
+            java.lang.reflect.Method b2 = builder.getClass().getMethod("button2", String.class);
+            titleM.invoke(builder, title);
+            contentM.invoke(builder, content);
+            b1.invoke(builder, yes);
+            b2.invoke(builder, no);
+            java.util.function.BiConsumer<Object, Object> handler = (form, response) -> {
+                try {
+                    boolean result;
+                    try {
+                        result = (boolean) response.getClass().getMethod("getResult").invoke(response);
+                    } catch (Throwable t0) {
+                        int id = (int) response.getClass().getMethod("getClickedButtonId").invoke(response);
+                        result = (id == 0);
+                    }
+                    if (result && onYes != null) org.bukkit.Bukkit.getScheduler().runTask(plugin, onYes);
+                } catch (Throwable ignored) {}
+            };
+            java.lang.reflect.Method valid2 = null;
+            for (java.lang.reflect.Method m : builder.getClass().getMethods()) {
+                if (m.getName().equals("validResultHandler") && m.getParameterCount() == 1) { valid2 = m; break; }
+            }
+            if (valid2 != null) valid2.invoke(builder, handler);
+            java.lang.reflect.Method build = builder.getClass().getMethod("build");
+            Object form = build.invoke(builder);
+            java.lang.reflect.Method send = null;
+            for (java.lang.reflect.Method m : apiClz.getMethods()) {
+                if (m.getName().equals("sendForm") && m.getParameterCount() == 2) { send = m; break; }
+            }
+            if (send == null) return false;
+            send.invoke(api, player.getUniqueId(), form);
+            return true;
+        } catch (Throwable t) { return false; }
+    }
+
+    public static boolean showRtpRadiusForm(StarTeleport plugin, Player player, int current, int step, int max, java.util.function.IntConsumer consumer) {
+        if (!isFloodgatePresent()) return false;
+        try {
+            Class<?> apiClz = Class.forName("floodgate.api.FloodgateApi");
+            Object api = apiClz.getMethod("getInstance").invoke(null);
+            Class<?> formClz = Class.forName("org.geysermc.cumulus.form.CustomForm");
+            Object builder = formClz.getMethod("builder").invoke(null);
+            java.lang.reflect.Method title = builder.getClass().getMethod("title", String.class);
+            title.invoke(builder, plugin.getLang().t("menu.rtp.title"));
+            boolean ok = false;
+            try {
+                java.lang.reflect.Method slider = builder.getClass().getMethod("slider", String.class, int.class, int.class, int.class, int.class);
+                slider.invoke(builder, plugin.getLang().t("menu.rtp.current"), step, max, step, Math.max(step, Math.min(max, current)));
+                ok = true;
+            } catch (Throwable ignored) {}
+            if (!ok) {
+                try {
+                    java.lang.reflect.Method slider = builder.getClass().getMethod("slider", String.class, double.class, double.class, double.class, double.class);
+                    slider.invoke(builder, plugin.getLang().t("menu.rtp.current"), (double) step, (double) max, (double) step, (double) Math.max(step, Math.min(max, current)));
+                } catch (Throwable ignored) {}
+            }
+            java.util.function.BiConsumer<Object, Object> handler = (form, response) -> {
+                try {
+                    Object nextVal = null;
+                    try { nextVal = response.getClass().getMethod("next").invoke(response); }
+                    catch (Throwable t2) {
+                        try { nextVal = response.getClass().getMethod("getSlider", int.class).invoke(response, 0); } catch (Throwable t3) { nextVal = 0; }
+                    }
+                    final int radius = nextVal instanceof Number ? ((Number) nextVal).intValue() : current;
+                    org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> consumer.accept(radius));
+                } catch (Throwable ignored) {}
+            };
+            java.lang.reflect.Method valid = null;
+            for (java.lang.reflect.Method m : builder.getClass().getMethods()) {
+                if (m.getName().equals("validResultHandler") && m.getParameterCount() == 1) { valid = m; break; }
+            }
+            if (valid != null) valid.invoke(builder, handler);
+            java.lang.reflect.Method build = builder.getClass().getMethod("build");
+            Object form = build.invoke(builder);
+            java.lang.reflect.Method send = null;
+            for (java.lang.reflect.Method m : apiClz.getMethods()) {
+                if (m.getName().equals("sendForm") && m.getParameterCount() == 2) { send = m; break; }
+            }
+            if (send == null) return false;
+            send.invoke(api, player.getUniqueId(), form);
+            return true;
+        } catch (Throwable t) { return false; }
+    }
 }
