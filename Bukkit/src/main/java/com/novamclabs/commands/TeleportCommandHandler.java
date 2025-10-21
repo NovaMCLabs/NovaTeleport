@@ -64,8 +64,8 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             case "warps": return handleWarps(sender);
             case "spawn": return handleSpawn(sender);
             case "back": return handleBack(sender);
-            case "rtp": return handleRtp(sender);
-            case "rtpgui": return handleRtpGui(sender);
+            case "rtp": return handleRtp(sender, args);
+            case "rtpgui": return handleRtp(sender, args);
             case "tpmenu": return handleTpMenu(sender);
         }
         return false;
@@ -202,14 +202,17 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     private boolean handleHome(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
-        String name = args.length >= 1 ? args[0] : "home";
+        // 无参数：打开菜单；带参数：直达
+        if (args.length == 0) {
+            return handleHomes(sender);
+        }
+        String name = args[0];
         com.novamclabs.storage.DataStore.Destination dest = store.getHomeDest(p.getUniqueId(), name);
         if (dest == null || dest.location == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
         if (!ensurePaid(p, "home")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         String myServer = plugin.getConfig().getString("network.server_name", "local");
         if (dest.server != null && !dest.server.equalsIgnoreCase(myServer)) {
-            // 跨服：先连接到目标服，由目标服再次执行 /home | Cross-server connect then run command again
             com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server);
             p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
             return true;
@@ -270,7 +273,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     private boolean handleWarp(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
-        if (args.length < 1) { p.sendMessage(plugin.getLang().t("usage.warp")); return true; }
+        if (args.length < 1) { return handleWarps(sender); }
         String name = args[0];
         com.novamclabs.storage.DataStore.Destination dest = store.getWarpDest(name);
         if (dest == null || dest.location == null) { p.sendMessage(plugin.getLang().tr("warps.not_found", "name", name)); return true; }
@@ -344,12 +347,27 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         return true;
     }
 
-    private boolean handleRtp(CommandSender sender) {
+    private boolean handleRtp(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
+        if (args.length == 0) {
+            return handleRtpGui(sender);
+        }
+        // /rtp now | /rtp start | /rtp <radius>
         World world = p.getWorld();
+        int radius = -1;
+        if (args.length >= 1) {
+            if (args[0].equalsIgnoreCase("now") || args[0].equalsIgnoreCase("start")) {
+                // keep radius default
+            } else {
+                try { radius = Integer.parseInt(args[0]); } catch (Exception ignored) {}
+            }
+        }
         Location dest = null;
-        if (plugin.getRtpPoolManager() != null) {
+        if (radius > 0) {
+            dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random(), radius);
+        }
+        if (dest == null && plugin.getRtpPoolManager() != null) {
             dest = plugin.getRtpPoolManager().poll(world);
         }
         if (dest == null) {

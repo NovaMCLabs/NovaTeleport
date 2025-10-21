@@ -106,26 +106,18 @@ commands:
     description: 删除家
     usage: /delhome [名称]
     permission: novateleport.command.home
-  homes:
-    description: 列出我的家
-    usage: /homes
-    permission: novateleport.command.home
   setwarp:
     description: 设置公共传送点
     usage: /setwarp <名称>
     permission: novateleport.command.setwarp
   warp:
-    description: 前往公共传送点
-    usage: /warp <名称>
+    description: 前往公共传送点（无参数打开菜单）
+    usage: /warp [名称]
     permission: novateleport.command.warp
   delwarp:
     description: 删除公共传送点
     usage: /delwarp <名称>
     permission: novateleport.command.setwarp
-  warps:
-    description: 列出公共传送点
-    usage: /warps
-    permission: novateleport.command.warp
   spawn:
     description: 前往出生点
     usage: /spawn
@@ -135,17 +127,9 @@ commands:
     usage: /back
     permission: novateleport.command.back
   rtp:
-    description: 随机传送
-    usage: /rtp
+    description: 随机传送（无参数打开菜单）
+    usage: /rtp [now|start|半径]
     permission: novateleport.command.rtp
-  rtpgui:
-    description: 打开随机传送界面
-    usage: /rtpgui
-    permission: novateleport.command.rtp
-  tpmenu:
-    description: 打开传送菜单
-    usage: /tpmenu
-    permission: novateleport.command.tpmenu
   tpanimation:
     description: 选择传送动画风格
     usage: /tpanimation select <magic|tech|natural>

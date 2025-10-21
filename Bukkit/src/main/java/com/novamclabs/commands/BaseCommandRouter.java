@@ -52,15 +52,15 @@ public class BaseCommandRouter implements CommandExecutor, TabCompleter {
             case "sethome": return route(sender, "sethome", rest);
             case "home": return route(sender, "home", rest);
             case "delhome": return route(sender, "delhome", rest);
-            case "homes": return route(sender, "homes", rest);
+            case "homes": return route(sender, "home", new String[]{});
             case "setwarp": return route(sender, "setwarp", rest);
             case "warp": return route(sender, "warp", rest);
             case "delwarp": return route(sender, "delwarp", rest);
-            case "warps": return route(sender, "warps", rest);
+            case "warps": return route(sender, "warp", new String[]{});
             case "spawn": return route(sender, "spawn", rest);
             case "back": return route(sender, "back", rest);
             case "rtp": return route(sender, "rtp", rest);
-            case "rtpgui": return route(sender, "rtpgui", rest);
+            case "rtpgui": return route(sender, "rtp", rest);
             case "tpmenu": return route(sender, "tpmenu", rest);
             case "city": return route(sender, "city", rest);
             case "tpanimation": return route(sender, "tpanimation", rest);
