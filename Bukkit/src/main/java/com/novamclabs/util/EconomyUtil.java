@@ -17,7 +17,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.RegisteredServiceProvider;
 
 /**
- * Vault 经济工具（使用 compileOnly 依赖，去除反射）
+ * Vault 经济工具
  */
 public class EconomyUtil {
     private static Economy economy;

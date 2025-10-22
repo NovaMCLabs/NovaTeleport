@@ -50,8 +50,24 @@ public class TeleportUtil {
             playPrepare(plugin, player, target);
             if (!com.novamclabs.util.RegionGuardUtil.canEnter(player, target)) {
                 player.sendMessage(plugin.getLang().t("command.no_permission"));
+                if (plugin.getConfig().getBoolean("general.debug", plugin.getConfig().getBoolean("debug", false))) {
+                    plugin.getLogger().info(plugin.getLang().t("debug.region_denied"));
+                }
                 return null;
             }
+            if (plugin.getConfig().getBoolean("general.debug", plugin.getConfig().getBoolean("debug", false))) {
+                plugin.getLogger().info(plugin.getLang().tr("debug.tp.begin", "world", target.getWorld()!=null?target.getWorld().getName():"null", "x", String.format("%.2f", target.getX()), "y", String.format("%.2f", target.getY()), "z", String.format("%.2f", target.getZ())));
+            }
+            player.teleport(target);
+            applyPostEffect(player, readPostEffectConfig(plugin));
+            playAfter(plugin, player, target);
+            if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPost(player, target);
+            if (plugin.getConfig().getBoolean("general.debug", plugin.getConfig().getBoolean("debug", false))) {
+                plugin.getLogger().info(plugin.getLang().t("debug.tp.done"));
+            }
+            if (onComplete != null) onComplete.run();
+            return null;
+        }
             player.teleport(target);
             applyPostEffect(player, readPostEffectConfig(plugin));
             playAfter(plugin, player, target);
@@ -87,13 +103,22 @@ public class TeleportUtil {
                     if (animation) playPrepare(plugin, player, target);
                     if (!com.novamclabs.util.RegionGuardUtil.canEnter(player, target)) {
                         player.sendMessage(plugin.getLang().t("command.no_permission"));
+                        if (plugin.getConfig().getBoolean("general.debug", plugin.getConfig().getBoolean("debug", false))) {
+                            plugin.getLogger().info(plugin.getLang().t("debug.region_denied"));
+                        }
                         return;
+                    }
+                    if (plugin.getConfig().getBoolean("general.debug", plugin.getConfig().getBoolean("debug", false))) {
+                        plugin.getLogger().info(plugin.getLang().tr("debug.tp.begin", "world", target.getWorld()!=null?target.getWorld().getName():"null", "x", String.format("%.2f", target.getX()), "y", String.format("%.2f", target.getY()), "z", String.format("%.2f", target.getZ())));
                     }
                     player.teleport(target);
                     if (plugin.getConfig().getBoolean("features.post_effect_enabled", true))
                         applyPostEffect(player, readPostEffectConfig(plugin));
                     if (animation) playAfter(plugin, player, target);
                     if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPost(player, target);
+                    if (plugin.getConfig().getBoolean("general.debug", plugin.getConfig().getBoolean("debug", false))) {
+                        plugin.getLogger().info(plugin.getLang().t("debug.tp.done"));
+                    }
                     if (onComplete != null) onComplete.run();
                 }
                 remaining--;

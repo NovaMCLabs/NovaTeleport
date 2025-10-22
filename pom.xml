@@ -11,6 +11,7 @@
 
     <modules>
         <module>Sqlit-Lib</module>
+        <module>Common</module>
         <module>Bukkit</module>
         <module>BungeeCore</module>
         <module>Velocity</module>
@@ -62,6 +63,10 @@
         <repository>
             <id>intellectualsites</id>
             <url>https://repo.intellectualsites.com/content/repositories/releases/</url>
+        </repository>
+        <repository>
+            <id>alessiodp-repo</id>
+            <url>https://repo.alessiodp.com/releases/</url>
         </repository>
     </repositories>
 

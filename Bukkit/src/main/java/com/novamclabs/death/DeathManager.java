@@ -71,7 +71,7 @@ public class DeathManager implements Listener, CommandExecutor {
         boolean show = bedrock ? conf.getBoolean("auto_prompt.bedrock", true) : conf.getBoolean("auto_prompt.java", true);
         if (!show) return;
         if (bedrock) {
-            BedrockFormsUtil.showModalConfirm(plugin, p, plugin.getLang().t("menu.main.title"), plugin.getLang().t("death.prompt"), plugin.getLang().t("death.back_now"), "§cCancel", () -> p.performCommand("deathback"));
+            BedrockFormsUtil.showModalConfirm(plugin, p, plugin.getLang().t("menu.main.title"), plugin.getLang().t("death.prompt"), plugin.getLang().t("death.back_now"), plugin.getLang().t("common.cancel"), () -> p.performCommand("deathback"));
         } else {
             net.md_5.bungee.api.chat.TextComponent yes = new net.md_5.bungee.api.chat.TextComponent(plugin.getLang().t("death.back_now"));
             yes.setColor(net.md_5.bungee.api.ChatColor.GREEN);

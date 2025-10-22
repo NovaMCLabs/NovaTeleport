@@ -8,7 +8,6 @@ import redis.clients.jedis.JedisPubSub;
 
 /**
  * 跨服服务整合（Redis 可选，用于 TPA/待处理任务广播）
- * 使用 Jedis（compileOnly/provided）替代反射调用
  */
 public class CrossServerService {
     private final StarTeleport plugin;

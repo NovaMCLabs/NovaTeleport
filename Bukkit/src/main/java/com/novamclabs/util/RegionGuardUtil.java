@@ -4,54 +4,48 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
+package com.novamclabs.util;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.entity.Player;
+
+package com.novamclabs.util;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.entity.Player;
+
 /**
- * 领地/区域检查（Residence/PlotSquared/WorldGuard）的反射适配器
- * Region guard checks via reflection (Residence/PlotSquared/WorldGuard)
+ * 区域进入检查（WorldGuard / PlotSquared）。
+ * 若未安装相关插件，则默认放行。
  */
 public class RegionGuardUtil {
     public static boolean canEnter(Player p, Location dest) {
-        boolean allowed = true;
-        // Residence
-        try {
-            if (Bukkit.getPluginManager().getPlugin("Residence") != null) {
-                Class<?> resClz = Class.forName("com.bekvon.bukkit.residence.Residence");
-                Object res = resClz.getMethod("getInstance").invoke(null);
-                Object mgr = resClz.getMethod("getResidenceManager").invoke(res);
-                Object area = mgr.getClass().getMethod("getByLoc", Location.class).invoke(mgr, dest);
-                if (area != null) {
-                    Object perms = area.getClass().getMethod("getPermissions").invoke(area);
-                    Boolean flag = (Boolean) perms.getClass().getMethod("playerHas", String.class, String.class).invoke(perms, p.getName(), "enter");
-                    if (flag != null && !flag) return false;
-                }
-            }
-        } catch (Throwable ignored) {}
-        // PlotSquared
+        // PlotSquared: 若所在地块且玩家不在成员中，则拒绝
         try {
             if (Bukkit.getPluginManager().getPlugin("PlotSquared") != null) {
-                Class<?> apiClz = Class.forName("com.plotsquared.core.PlotAPI");
-                Object api = apiClz.getConstructor().newInstance();
-                Object plot = apiClz.getMethod("getPlot", Location.class).invoke(api, dest);
+                com.plotsquared.core.PlotAPI api = new com.plotsquared.core.PlotAPI();
+                Object plot = api.getPlot(dest);
                 if (plot != null) {
-                    Boolean b = (Boolean) plot.getClass().getMethod("isAdded", java.util.UUID.class).invoke(plot, p.getUniqueId());
-                    if (b != null && !b) return false;
+                    // 运行时调用避免硬依赖 Plot 类符号
+                    java.lang.reflect.Method isAdded = plot.getClass().getMethod("isAdded", java.util.UUID.class);
+                    boolean added = (boolean) isAdded.invoke(plot, p.getUniqueId());
+                    if (!added) return false;
                 }
             }
         } catch (Throwable ignored) {}
-        // WorldGuard 7.x （仅做存在性检测与粗略入口flag检查）
+        // WorldGuard: ENTRY flag 检查
         try {
             if (Bukkit.getPluginManager().getPlugin("WorldGuard") != null) {
-                Class<?> wgClz = Class.forName("com.sk89q.worldguard.WorldGuard");
-                Object wg = wgClz.getMethod("getInstance").invoke(null);
-                Object platform = wgClz.getMethod("getPlatform").invoke(wg);
-                Object container = platform.getClass().getMethod("getRegionContainer").invoke(platform);
-                Class<?> bukkitAdapter = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
-                Object weWorld = bukkitAdapter.getMethod("adapt", org.bukkit.World.class).invoke(null, dest.getWorld());
-                Object regions = container.getClass().getMethod("get", Class.forName("com.sk89q.worldguard.protection.regions.RegionManager"), weWorld.getClass()).invoke(container, null, weWorld);
-                if (regions != null) {
-                    // 本处仅进行存在性判定，细粒度 flag 校验可在未来增强
-                }
+                com.sk89q.worldguard.protection.regions.RegionContainer container = com.sk89q.worldguard.WorldGuard.getInstance().getPlatform().getRegionContainer();
+                com.sk89q.worldguard.protection.regions.RegionQuery query = container.createQuery();
+                com.sk89q.worldedit.util.Location weLoc = com.sk89q.worldedit.bukkit.BukkitAdapter.adapt(dest);
+                com.sk89q.worldguard.LocalPlayer lp = com.sk89q.worldguard.bukkit.WorldGuardPlugin.inst().wrapPlayer(p);
+                boolean allowed = query.testState(weLoc, lp, com.sk89q.worldguard.protection.flags.Flags.ENTRY);
+                if (!allowed) return false;
             }
         } catch (Throwable ignored) {}
-        return allowed;
+        return true;
     }
 }

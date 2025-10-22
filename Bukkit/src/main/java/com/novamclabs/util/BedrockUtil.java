@@ -13,7 +13,7 @@ import org.bukkit.entity.Player;
 import java.util.UUID;
 
 /**
- * 基于 Floodgate API 的基岩版检测（compileOnly 依赖）
+ * 基岩版检测（若安装 Floodgate 则使用其 API）
  */
 public class BedrockUtil {
     public static boolean isBedrock(Player player) {

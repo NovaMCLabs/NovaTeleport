@@ -17,6 +17,7 @@ import java.util.logging.Level;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class StarTeleport extends JavaPlugin implements Listener, CommandExecutor {
+    private com.novamclabs.party.adapter.PartyAdapterManager extPartyAdapter;
     private boolean debug;
     private int teleportDelay;
     private com.novamclabs.storage.DataStore dataStore;
@@ -126,11 +127,11 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             getCommand("party").setExecutor(new com.novamclabs.party.PartyCommand(this, partyManager));
         }
         // 外部队伍适配器 | external party adapter
-        com.novamclabs.party.adapter.PartyAdapterManager adapterMgr = new com.novamclabs.party.adapter.PartyAdapterManager();
-        adapterMgr.detectAndRegister(this, () -> com.novamclabs.party.PartyNameDisplay.refreshAll(adapterMgr.getActive()));
+        this.extPartyAdapter = new com.novamclabs.party.adapter.PartyAdapterManager();
+        this.extPartyAdapter.detectAndRegister(this, () -> com.novamclabs.party.PartyNameDisplay.refreshAll(extPartyAdapter.getActive()));
         // 初始刷新 & 定时刷新（兜底）
-        com.novamclabs.party.PartyNameDisplay.refreshAll(adapterMgr.getActive());
-        getServer().getScheduler().runTaskTimer(this, () -> com.novamclabs.party.PartyNameDisplay.refreshAll(adapterMgr.getActive()), 200L, 200L);
+        com.novamclabs.party.PartyNameDisplay.refreshAll(extPartyAdapter.getActive());
+        getServer().getScheduler().runTaskTimer(this, () -> com.novamclabs.party.PartyNameDisplay.refreshAll(extPartyAdapter.getActive()), 200L, 200L);
         // 其它独立命令注册 | other commands
         if (getCommand("stele") != null) {
             getCommand("stele").setExecutor(new com.novamclabs.stele.SteleCommand(this, steleManager));
@@ -388,6 +389,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     public com.novamclabs.rtp.RtpPoolManager getRtpPoolManager() { return this.rtpPoolManager; }
     public com.novamclabs.scripting.ScriptingManager getScriptingManager() { return this.scriptingManager; }
     public com.novamclabs.cross.CrossServerService getCrossServerService() { return this.crossServerService; }
+    public com.novamclabs.party.adapter.PartyAdapterManager getExtPartyAdapter() { return this.extPartyAdapter; }
     public void setDebug(boolean enabled) { this.debug = enabled; }
     
     /**

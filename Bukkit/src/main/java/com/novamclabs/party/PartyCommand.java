@@ -78,11 +78,14 @@ public class PartyCommand implements CommandExecutor {
                     isLeader = manager.isLeader(p.getUniqueId());
                     targetMembers.addAll(party.members);
                 } else {
-                    // 外部组队插件适配 | external party plugins
-                    com.novamclabs.party.integration.PartyBridge.PartyInfo info = com.novamclabs.party.integration.PartyBridge.findFor(p);
-                    if (info != null) {
-                        isLeader = p.getUniqueId().equals(info.leader);
-                        targetMembers.addAll(info.members);
+                    // 外部组队插件适配（使用已注册的适配器）
+                    com.novamclabs.party.adapter.PartyAdapterManager ext = plugin.getExtPartyAdapter();
+                    if (ext != null && ext.getActive() != null) {
+                        com.novamclabs.party.adapter.PartyAdapter.PartyInfo info = ext.getActive().getParty(p);
+                        if (info != null) {
+                            isLeader = p.getUniqueId().equals(info.leader);
+                            targetMembers.addAll(info.members);
+                        }
                     }
                 }
                 if (!isLeader) { p.sendMessage(plugin.getLang().t("party.not_leader")); return true; }

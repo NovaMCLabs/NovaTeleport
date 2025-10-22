@@ -24,6 +24,11 @@
             <artifactId>nova-storage</artifactId>
             <version>${project.parent.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.novamclabs</groupId>
+            <artifactId>NovaTeleport-Common</artifactId>
+            <version>${project.parent.version}</version>
+        </dependency>
         <!-- compileOnly/provided 依赖：Vault API / Floodgate API / Cumulus / Jedis -->
         <dependency>
             <groupId>com.github.MilkBowl</groupId>
@@ -47,6 +52,24 @@
             <groupId>redis.clients</groupId>
             <artifactId>jedis</artifactId>
             <version>5.1.3</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.sk89q.worldguard</groupId>
+            <artifactId>worldguard-bukkit</artifactId>
+            <version>7.0.9</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.plotsquared</groupId>
+            <artifactId>PlotSquared-Core</artifactId>
+            <version>6.13.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.alessiodp</groupId>
+            <artifactId>parties-api</artifactId>
+            <version>3.2.13</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>

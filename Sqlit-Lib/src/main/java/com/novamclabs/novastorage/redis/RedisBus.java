@@ -4,7 +4,7 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPubSub;
 
 /**
- * 轻量级 Redis 发布/订阅封装（使用 Jedis compileOnly 依赖）
+ * 轻量级 Redis 发布/订阅封装
  */
 public class RedisBus {
     private final String host; private final int port; private final String pass; private final String channel;
