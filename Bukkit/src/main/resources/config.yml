@@ -100,8 +100,6 @@ rtp:
 features:
   animation_enabled: true
   post_effect_enabled: true
-  # 若玩家在船中，是否携带船及其中的生物一起传送
-  carry_boat_with_passengers: false
 
 animations:
   # 默认动画风格: magic | tech | natural
