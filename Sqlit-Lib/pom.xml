@@ -34,6 +34,13 @@
             <artifactId>postgresql</artifactId>
             <version>42.7.2</version>
         </dependency>
+        <!-- compileOnly/provided：Jedis（用于 Redis 总线） -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>5.1.3</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>

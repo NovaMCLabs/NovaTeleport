@@ -6,35 +6,39 @@ import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.RegisteredServiceProvider;
 
+package com.novamclabs.util;
+
+import com.novamclabs.StarTeleport;
+import net.milkbowl.vault.economy.Economy;
+import net.milkbowl.vault.economy.EconomyResponse;
+import org.bukkit.Bukkit;
+import org.bukkit.OfflinePlayer;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.RegisteredServiceProvider;
+
 /**
- * Vault 经济工具（无编译期依赖，使用反射接入）
+ * Vault 经济工具（使用 compileOnly 依赖，去除反射）
  */
 public class EconomyUtil {
-    private static Object econProvider;
-    private static Class<?> economyClass;
+    private static Economy economy;
 
     public static void setup(StarTeleport plugin) {
         try {
             if (Bukkit.getPluginManager().getPlugin("Vault") == null) {
-                econProvider = null;
-                economyClass = null;
+                economy = null;
                 return;
             }
-            Class<?> ecoClz = Class.forName("net.milkbowl.vault.economy.Economy");
-            @SuppressWarnings({"rawtypes", "unchecked"})
-            RegisteredServiceProvider rsp = Bukkit.getServicesManager().getRegistration((Class) ecoClz);
+            RegisteredServiceProvider<Economy> rsp = Bukkit.getServicesManager().getRegistration(Economy.class);
             if (rsp != null) {
-                econProvider = rsp.getProvider();
-                economyClass = ecoClz;
+                economy = rsp.getProvider();
             }
         } catch (Throwable ignored) {
-            econProvider = null;
-            economyClass = null;
+            economy = null;
         }
     }
 
     public static boolean hasProvider() {
-        return econProvider != null && economyClass != null;
+        return economy != null;
     }
 
     public static boolean isEnabled(StarTeleport plugin) {
@@ -63,13 +67,10 @@ public class EconomyUtil {
         if (!hasProvider()) return true; // 没有经济提供者则跳过扣费
         try {
             // 余额
-            double bal = (double) economyClass.getMethod("getBalance", OfflinePlayer.class)
-                    .invoke(econProvider, (OfflinePlayer) player);
+            double bal = economy.getBalance((OfflinePlayer) player);
             if (bal < amount) return false;
-            Object resp = economyClass.getMethod("withdrawPlayer", OfflinePlayer.class, double.class)
-                    .invoke(econProvider, (OfflinePlayer) player, amount);
-            // 检查交易是否成功
-            return (boolean) resp.getClass().getMethod("transactionSuccess").invoke(resp);
+            EconomyResponse resp = economy.withdrawPlayer((OfflinePlayer) player, amount);
+            return resp != null && resp.transactionSuccess();
         } catch (Throwable t) {
             return false;
         }

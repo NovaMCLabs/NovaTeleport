@@ -3,18 +3,21 @@ package com.novamclabs.cross;
 import com.novamclabs.StarTeleport;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
-
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPubSub;
 
 /**
  * 跨服服务整合（Redis 可选，用于 TPA/待处理任务广播）
- * Cross-server service (optional Redis for TPA/pending actions)
+ * 使用 Jedis（compileOnly/provided）替代反射调用
  */
 public class CrossServerService {
     private final StarTeleport plugin;
     private final String serverName;
     private final boolean redisEnabled;
+
+    private String redisHost;
+    private int redisPort;
+    private String redisPass;
 
     public CrossServerService(StarTeleport plugin) {
         this.plugin = plugin;
@@ -24,19 +27,11 @@ public class CrossServerService {
         Bukkit.getPluginManager().registerEvents(new JoinListener(), plugin);
     }
 
-    private Object jedisPool; // 通过反射持有 | hold via reflection
-
     private void initRedis() {
         try {
-            Class<?> jedisPoolClz = Class.forName("redis.clients.jedis.JedisPool");
-            String host = plugin.getConfig().getString("network.redis.host", "127.0.0.1");
-            int port = plugin.getConfig().getInt("network.redis.port", 6379);
-            String pass = plugin.getConfig().getString("network.redis.password", "");
-            if (pass == null || pass.isEmpty()) {
-                jedisPool = jedisPoolClz.getConstructor(String.class, int.class).newInstance(host, port);
-            } else {
-                jedisPool = jedisPoolClz.getConstructor(String.class, int.class, String.class).newInstance(host, port, pass);
-            }
+            this.redisHost = plugin.getConfig().getString("network.redis.host", "127.0.0.1");
+            this.redisPort = plugin.getConfig().getInt("network.redis.port", 6379);
+            this.redisPass = plugin.getConfig().getString("network.redis.password", "");
             startSubscriber();
         } catch (Throwable t) {
             plugin.getLogger().warning("Redis unavailable, cross-server features limited");
@@ -44,24 +39,21 @@ public class CrossServerService {
     }
 
     private void startSubscriber() {
-        try {
-            final String channel = plugin.getConfig().getString("network.redis.channel", "novateleport");
-            Class<?> jedisClz = Class.forName("redis.clients.jedis.Jedis");
-            Class<?> subscriberClz = Class.forName("redis.clients.jedis.JedisPubSub");
-            Object sub = java.lang.reflect.Proxy.newProxyInstance(subscriberClz.getClassLoader(), new Class[]{subscriberClz}, (proxy, method, args) -> {
-                if (method.getName().equals("onMessage") && args.length == 2) {
-                    String msg = (String) args[1];
-                    handleMessage(msg);
+        final String channel = plugin.getConfig().getString("network.redis.channel", "novateleport");
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try (Jedis jedis = new Jedis(redisHost, redisPort)) {
+                if (redisPass != null && !redisPass.isEmpty()) {
+                    jedis.auth(redisPass);
                 }
-                return null;
-            });
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                try {
-                    Object jedis = jedisClz.cast(jedisPool.getClass().getMethod("getResource").invoke(jedisPool));
-                    jedisClz.getMethod("subscribe", subscriberClz, String[].class).invoke(jedis, sub, new Object[]{new String[]{channel}});
-                } catch (Throwable ignored) {}
-            });
-        } catch (Throwable ignored) {}
+                jedis.subscribe(new JedisPubSub() {
+                    @Override
+                    public void onMessage(String ch, String message) {
+                        if (!channel.equals(ch)) return;
+                        handleMessage(message);
+                    }
+                }, channel);
+            } catch (Throwable ignored) { }
+        });
     }
 
     private void handleMessage(String json) {
@@ -103,14 +95,15 @@ public class CrossServerService {
     }
 
     public void publishTpaRequest(String targetName, String requesterName, boolean here) {
-        if (!redisEnabled || jedisPool == null) return;
+        if (!redisEnabled) return;
         String channel = plugin.getConfig().getString("network.redis.channel", "novateleport");
         String payload = String.format("{\"type\":\"tpa\",\"target\":\"%s\",\"requester\":\"%s\",\"here\":%s,\"server\":\"%s\"}",
                 targetName, requesterName, here?"true":"false", serverName);
-        try {
-            Class<?> jedisClz = Class.forName("redis.clients.jedis.Jedis");
-            Object jedis = jedisClz.cast(jedisPool.getClass().getMethod("getResource").invoke(jedisPool));
-            jedisClz.getMethod("publish", String.class, String.class).invoke(jedis, channel, payload);
+        try (Jedis jedis = new Jedis(redisHost, redisPort)) {
+            if (redisPass != null && !redisPass.isEmpty()) {
+                jedis.auth(redisPass);
+            }
+            jedis.publish(channel, payload);
         } catch (Throwable ignored) {}
     }
 
