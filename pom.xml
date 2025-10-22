@@ -11,9 +11,11 @@
 
     <modules>
         <module>Sqlit-Lib</module>
+        <module>Common</module>
         <module>Bukkit</module>
         <module>BungeeCore</module>
         <module>Velocity</module>
+        <module>Folia</module>
     </modules>
 
     <properties>
@@ -48,7 +50,7 @@
                 <version>3.6.1</version>
                 <executions>
                     <execution>
-                        <id>copy-bukkit-sqlitlib</id>
+                        <id>copy-artifacts-to-dist</id>
                         <phase>package</phase>
                         <goals><goal>copy</goal></goals>
                         <configuration>
@@ -73,13 +75,6 @@
                                     <version>${project.version}</version>
                                     <type>jar</type>
                                     <destFileName>NovaTeleport-Velocity.jar</destFileName>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.novamclabs</groupId>
-                                    <artifactId>nova-storage</artifactId>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <destFileName>nova-storage.jar</destFileName>
                                 </artifactItem>
                             </artifactItems>
                             <outputDirectory>${project.build.directory}/dist</outputDirectory>

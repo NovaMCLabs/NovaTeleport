@@ -24,6 +24,11 @@
             <artifactId>nova-storage</artifactId>
             <version>${project.parent.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.novamclabs</groupId>
+            <artifactId>NovaTeleport-Common</artifactId>
+            <version>${project.parent.version}</version>
+        </dependency>
     </dependencies>
 
     <repositories>

@@ -1,13 +1,19 @@
 package com.novamclabs.util;
 
 import com.novamclabs.StarTeleport;
+import com.novamclabs.common.Constants;
 import org.bukkit.*;
+import org.bukkit.entity.Boat;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class TeleportUtil {
     public static class PostEffectConfig {
@@ -52,7 +58,7 @@ public class TeleportUtil {
                 player.sendMessage(plugin.getLang().t("command.no_permission"));
                 return null;
             }
-            player.teleport(target);
+            teleportRespectingBoat(plugin, player, target);
             applyPostEffect(player, readPostEffectConfig(plugin));
             playAfter(plugin, player, target);
             if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPost(player, target);
@@ -89,7 +95,7 @@ public class TeleportUtil {
                         player.sendMessage(plugin.getLang().t("command.no_permission"));
                         return;
                     }
-                    player.teleport(target);
+                    teleportRespectingBoat(plugin, player, target);
                     if (plugin.getConfig().getBoolean("features.post_effect_enabled", true))
                         applyPostEffect(player, readPostEffectConfig(plugin));
                     if (animation) playAfter(plugin, player, target);
@@ -100,6 +106,37 @@ public class TeleportUtil {
             }
         };
         return runnable.runTaskTimer(plugin, 0L, 20L);
+    }
+
+    // 若开启配置且玩家在船上，则携带船与乘客一起传送
+    private static void teleportRespectingBoat(StarTeleport plugin, Player player, Location target) {
+        boolean carryBoat = plugin.getConfig().getBoolean(Constants.CFG_CARRY_BOAT_WITH_PASSENGERS, false);
+        Entity vehicle = player.getVehicle();
+        if (!carryBoat || !(vehicle instanceof Boat)) {
+            player.teleport(target);
+            return;
+        }
+        Boat boat = (Boat) vehicle;
+        List<Entity> passengers = new ArrayList<>(boat.getPassengers());
+        // 先让所有乘客下船，避免跨世界传送时异常
+        for (Entity e : passengers) {
+            try { e.leaveVehicle(); } catch (Throwable ignored) {}
+        }
+        // 传送船
+        boat.teleport(target);
+        // 下一个tick 将乘客传送至目标并重新上船
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            for (Entity e : passengers) {
+                try {
+                    e.teleport(target);
+                    boat.addPassenger(e);
+                } catch (Throwable ignored) {}
+            }
+            // 确保玩家在船上
+            if (!boat.getPassengers().contains(player)) {
+                try { boat.addPassenger(player); } catch (Throwable ignored) {}
+            }
+        });
     }
 
     private static void playPrepare(StarTeleport plugin, Player player, Location target) {
