@@ -1,0 +1,193 @@
+# NovaTeleport 功能配置文件
+# NovaTeleport Features Configuration
+
+# ====================================
+# 经济系统
+# Economy System
+# ====================================
+economy:
+  enabled: false
+  bypass_permission: "novateleport.economy.bypass"
+  costs:
+    tpa: 10.0
+    tpahere: 15.0
+    home: 5.0
+    warp: 5.0
+    rtp: 20.0
+    back: 0.0
+
+# ====================================
+# Towny 城镇传送
+# Towny Town Teleportation
+# ====================================
+towny:
+  enabled: false
+  # 传送到自己城镇的延迟（秒）
+  home_delay: 3
+  # 传送到其他城镇的延迟（秒）
+  other_delay: 5
+  # 传送费用
+  home_cost: 0.0
+  other_cost: 10.0
+
+# ====================================
+# 工会系统
+# Guild System
+# ====================================
+guild:
+  enabled: false
+  # 支持的工会插件（auto-detect）
+  plugins:
+    - Guilds
+    - SimpleClans
+    - FactionsUUID
+  # 工会传送点
+  warps:
+    enabled: true
+    max_per_guild: 5
+    # 只有管理员可以设置
+    admin_only: true
+  # 工会据点
+  headquarters:
+    enabled: true
+    # 据点保护半径
+    protection_radius: 50
+
+# ====================================
+# 付费传送点系统
+# Toll Warp System
+# ====================================
+toll_warps:
+  enabled: false
+  # 模式：toll（付费）或 free（免费）
+  mode: "toll"
+  max_per_player: 3
+  min_price: 0.0
+  max_price: 10000.0
+  owner_fee_percentage: 100.0
+  allow_free: true
+
+# ====================================
+# 时空领航员系统
+# Astra Navigator System
+# ====================================
+astra_navigator:
+  enabled: false
+  # 基础酬金倍率
+  base_reward_multiplier: 1.0
+  # 裂隙区域酬金翻倍
+  rift_reward_multiplier: 2.0
+  # 信标稳定时间（秒）
+  beacon_stabilize_time: 8
+  # 谐振器物品
+  resonator_item: "CLOCK"
+  # 传送锁定期间禁用的命令
+  locked_commands:
+    - "home"
+    - "warp"
+    - "tpa"
+    - "rtp"
+    - "back"
+    - "stele"
+
+# ====================================
+# 维度裂隙系统
+# Dimensional Rift System
+# ====================================
+dimensional_rifts:
+  enabled: false
+  # 裂隙生成间隔（分钟）
+  spawn_interval: 30
+  # 裂隙持续时间（分钟）
+  duration: 10
+  # 裂隙半径（方块）
+  radius: 50
+  # 随机传送的风险概率
+  hijack_chance: 0.8
+  # 口袋维度奖励概率
+  pocket_dimension_chance: 0.05
+
+# ====================================
+# 传送技能系统
+# Teleport Skills System
+# ====================================
+teleport_skills:
+  enabled: false
+  # 集成的技能插件（auto-detect）
+  integration:
+    mcmmo: true
+    aureliumskills: true
+  # 如果没有技能插件，使用内部实现
+  internal_system: true
+  # 每次传送获得的经验值
+  exp_per_teleport: 10
+  # 技能等级解锁
+  unlocks:
+    level_5:
+      - "delay_reduction_0.5s"
+    level_10:
+      - "unlock_tpahere"
+    level_15:
+      - "extra_home_slot"
+    level_20:
+      - "cooldown_reduction_10%"
+    level_25:
+      - "special_particle_effect"
+
+# ====================================
+# 法力/能量系统
+# Mana/Energy System
+# ====================================
+mana_system:
+  enabled: false
+  # 集成的RPG插件（auto-detect）
+  integration:
+    mythicmobs: true
+    mmocore: true
+  # 如果没有RPG插件，使用内部实现
+  internal_system: true
+  # 初始法力值
+  initial_mana: 100
+  # 最大法力值
+  max_mana: 200
+  # 法力恢复速度（每秒）
+  regen_rate: 5
+  # 传送消耗
+  costs:
+    home: 10
+    warp: 15
+    tpa: 20
+    rtp: 30
+    cross_server: 50
+  # 显示方式：bossbar 或 actionbar
+  display_type: "bossbar"
+
+# ====================================
+# 传送日志与回溯
+# Teleport Log and Rewind
+# ====================================
+teleport_log:
+  enabled: true
+  # 保留日志天数
+  retention_days: 30
+  # 记录的传送类型
+  log_types:
+    - tpa
+    - home
+    - warp
+    - rtp
+    - back
+    - portal
+    - stele
+  # 允许回溯的权限组
+  rewind_permission: "novateleport.admin.rewind"
+
+# ====================================
+# FoliaLib 调度器
+# FoliaLib Scheduler
+# ====================================
+scheduler:
+  # 启用 FoliaLib 调度器（自动检测 Folia）
+  enabled: true
+  # 调试模式
+  debug: false

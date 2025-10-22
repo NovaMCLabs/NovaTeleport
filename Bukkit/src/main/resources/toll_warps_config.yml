@@ -1,0 +1,46 @@
+# 付费传送点配置
+# Toll warps configuration
+
+# 是否启用付费传送点系统
+# Enable toll warp system
+enabled: true
+
+# 玩家可以创建的最大付费传送点数量
+# Maximum toll warps per player
+max_per_player: 3
+
+# 创建付费传送点的最低价格
+# Minimum price for toll warps
+min_price: 0.0
+
+# 创建付费传送点的最高价格
+# Maximum price for toll warps
+max_price: 10000.0
+
+# 所有者收取的费用百分比（剩余给服务器）
+# Owner收费 percentage (remaining goes to server)
+owner_fee_percentage: 100.0
+
+# 是否允许免费传送点
+# Allow free warps (price = 0)
+allow_free: true
+
+# 传送点过期时间（天数，0 表示永不过期）
+# Warp expiration time in days (0 = never expire)
+expiration_days: 0
+
+# GUI 设置
+# GUI settings
+gui:
+  title: "公共付费传送点"
+  rows: 6
+  item:
+    material: ENDER_PEARL
+    name: "&b{name}"
+    lore:
+      - "&7所有者: &e{owner}"
+      - "&7价格: &a{price}"
+      - "&7位置: &f{world} {x}, {y}, {z}"
+      - "&7使用次数: &6{usage}"
+      - ""
+      - "&e点击传送"
