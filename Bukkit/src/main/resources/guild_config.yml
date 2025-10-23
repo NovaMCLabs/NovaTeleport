@@ -1,0 +1,66 @@
+# 工会系统配置
+# Guild system configuration
+
+# 是否启用工会功能
+# Enable guild features
+enabled: false
+
+# 支持的工会插件（自动检测）
+# Supported guild plugins (auto-detect)
+plugins:
+  - Guilds
+  - SimpleClans
+  - FactionsUUID
+
+# 工会传送点设置
+# Guild warp settings
+warps:
+  # 是否启用工会传送点
+  # Enable guild warps
+  enabled: true
+  
+  # 每个工会最大传送点数量
+  # Maximum warps per guild
+  max_per_guild: 5
+  
+  # 只有管理员可以设置传送点
+  # Only admins can set warps
+  admin_only: true
+  
+  # 传送延迟（秒）
+  # Teleport delay in seconds
+  delay: 3
+  
+  # 传送费用
+  # Teleport cost
+  cost: 0.0
+
+# 工会据点设置
+# Guild headquarters settings
+headquarters:
+  # 是否启用工会据点
+  # Enable guild headquarters
+  enabled: true
+  
+  # 据点保护半径（方块）
+  # Protection radius in blocks
+  protection_radius: 50
+  
+  # 传送到据点的延迟（秒）
+  # Teleport delay to HQ in seconds
+  delay: 5
+  
+  # 传送到据点的费用
+  # Teleport cost to HQ
+  cost: 0.0
+
+# 工会传送权限
+# Guild teleport permissions
+permissions:
+  # 需要权限才能使用工会传送
+  # Require permission to use guild teleport
+  require_permission: true
+  
+  # 基础权限节点
+  # Base permission node
+  base_permission: "novateleport.guild.use"

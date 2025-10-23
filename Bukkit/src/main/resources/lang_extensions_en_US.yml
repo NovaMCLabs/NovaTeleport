@@ -1,0 +1,68 @@
+# Language file extensions - English
+
+# Towny related
+towny:
+  not_enabled: "&cTown teleport feature is not enabled"
+  no_town: "&cYou are not in any town"
+  no_spawn: "&cThis town has no spawn point set"
+  teleported_to_town: "&aTeleported to town &e{0}"
+  town_not_found: "&cTown not found: &e{0}"
+  town_private: "&cThis town is private, you don't have permission"
+
+# Guild related
+guild:
+  not_enabled: "&cGuild feature is not enabled"
+  no_guild: "&cYou are not in any guild"
+  warp_created: "&aGuild warp &e{0} &acreated"
+  warp_deleted: "&aGuild warp &e{0} &adeleted"
+  warp_not_found: "&cGuild warp not found: &e{0}"
+  warp_limit_reached: "&cGuild warp limit reached"
+  warp_already_exists: "&cGuild warp &e{0} &aalready exists"
+  headquarters_set: "&aGuild headquarters set"
+  failed_to_set_hq: "&cFailed to set guild headquarters"
+  not_admin: "&cOnly guild admins can do this"
+  same_guild_only: "&cCan only teleport to guild members"
+  no_warps: "&cThis guild has no warps"
+  no_hq: "&cGuild has no headquarters set"
+  teleported_to_hq: "&aTeleported to guild headquarters"
+  teleported_to_warp: "&aTeleported to guild warp &e{0}"
+  usage_warp: "&cUsage: /gtp warp <name>"
+  usage_setwarp: "&cUsage: /gtp setwarp <name>"
+  usage_delwarp: "&cUsage: /gtp delwarp <name>"
+  warps_header: "&6=== Guild Warps ==="
+  warp_entry: "&e{0} &7- &f{1} ({2}, {3}, {4})"
+  info_header: "&6=== Guild Info: {0} ==="
+  info_members: "&7Members: &e{0}"
+  info_role: "&7Your role: &e{0}"
+
+# Toll warp related
+toll:
+  not_enabled: "&cToll warp feature is not enabled"
+  created: "&aToll warp &e{0} &acreated with price: &6{1}"
+  deleted: "&aToll warp &e{0} &adeleted"
+  price_updated: "&aWarp &e{0} &aprice updated to &6{1}"
+  insufficient_funds: "&cInsufficient funds, need &6{0}"
+  owner_received: "&aYou received &6{0} &afrom &e{1} &ausing warp &e{2}"
+  teleported_toll: "&aTeleported to &e{0}&a, cost &6{1}"
+  teleported_owner: "&aTeleported to your warp &e{0}"
+  teleported_bypass: "&aTeleported to &e{0} &7(free)"
+  limit_reached: "&cYou have reached your toll warp limit"
+  name_exists: "&cWarp name &e{0} &calready exists"
+  not_found: "&cWarp not found: &e{0}"
+  not_owner: "&cYou are not the owner of this warp"
+  price_out_of_range: "&cPrice must be between &e{0} &cand &e{1}"
+  free_not_allowed: "&cFree warps are not allowed"
+  disabled: "&cWarp &e{0} &cis disabled"
+  no_warps: "&cNo public warps available"
+  no_own_warps: "&cYou haven't created any warps"
+
+# Economy system
+economy:
+  not_available: "&cEconomy system is not available"
+
+# Common commands
+command:
+  player_only: "&cThis command can only be executed by players"
+  no_permission: "&cYou don't have permission to execute this command"
+  reload:
+    success: "&aConfiguration reloaded"
