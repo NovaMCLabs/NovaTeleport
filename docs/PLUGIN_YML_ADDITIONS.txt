@@ -1,0 +1,66 @@
+# 需要添加到 plugin.yml 的内容
+# Content to add to plugin.yml
+
+## 1. 更新 softdepend 行（第6行）
+softdepend: [Vault, PlaceholderAPI, floodgate, Geyser, Parties, BetterTeams, SimpleClans, Factions, Guilds, WorldGuard, PlotSquared, Residence, Lands, GriefDefender, Towny, mcMMO, AureliumSkills, MythicMobs, MMOCore]
+
+## 2. 在 commands 部分末尾添加（第164行之后）：
+
+  towntp:
+    description: 传送到城镇出生点
+    usage: /towntp [城镇名称]
+    aliases: [town, ttown]
+    permission: novateleport.towny.home
+  
+  gtp:
+    description: 工会传送命令
+    usage: /gtp <home|sethome|warp|setwarp|delwarp|list|info>
+    aliases: [guild, guildtp]
+    permission: novateleport.guild.use
+  
+  tollwarp:
+    description: 付费传送点管理
+    usage: /tollwarp <create|delete|list|setprice|tp|info|mywarps> [参数...]
+    aliases: [toll, publicwarp, pwarp]
+    permission: novateleport.toll.use
+
+## 3. 在 permissions 部分末尾添加（第68行之后）：
+
+  # Towny 权限
+  novateleport.towny.home:
+    description: 传送到自己的城镇
+    default: true
+  novateleport.towny.other:
+    description: 传送到其他城镇
+    default: op
+  
+  # 工会权限
+  novateleport.guild.use:
+    description: 使用工会传送
+    default: true
+  novateleport.guild.home:
+    description: 传送到工会据点
+    default: true
+  novateleport.guild.warp:
+    description: 使用工会传送点
+    default: true
+  novateleport.guild.admin:
+    description: 管理工会传送点
+    default: false
+  
+  # 付费传送点权限
+  novateleport.toll.use:
+    description: 使用付费传送点
+    default: true
+  novateleport.toll.create:
+    description: 创建付费传送点
+    default: true
+  novateleport.toll.delete:
+    description: 删除自己的付费传送点
+    default: true
+  novateleport.toll.delete.others:
+    description: 删除他人的付费传送点
+    default: op
+  novateleport.toll.bypass:
+    description: 免费使用所有付费传送点
+    default: op

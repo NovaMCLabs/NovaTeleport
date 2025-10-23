@@ -1,0 +1,69 @@
+# 语言文件扩展 - 中文
+# Language file extensions - Chinese
+
+# Towny 相关
+towny:
+  not_enabled: "&c城镇传送功能未启用"
+  no_town: "&c你还没有加入任何城镇"
+  no_spawn: "&c该城镇没有设置出生点"
+  teleported_to_town: "&a已传送到城镇 &e{0}"
+  town_not_found: "&c找不到城镇: &e{0}"
+  town_private: "&c该城镇是私有的，你没有权限传送"
+
+# 工会相关
+guild:
+  not_enabled: "&c工会功能未启用"
+  no_guild: "&c你还没有加入任何工会"
+  warp_created: "&a工会传送点 &e{0} &a已创建"
+  warp_deleted: "&a工会传送点 &e{0} &a已删除"
+  warp_not_found: "&c找不到工会传送点: &e{0}"
+  warp_limit_reached: "&c工会传送点数量已达上限"
+  warp_already_exists: "&c工会传送点 &e{0} &a已存在"
+  headquarters_set: "&a工会据点已设置"
+  failed_to_set_hq: "&c设置工会据点失败"
+  not_admin: "&c只有工会管理员才能执行此操作"
+  same_guild_only: "&c只能传送给同工会成员"
+  no_warps: "&c该工会没有传送点"
+  no_hq: "&c工会没有设置据点"
+  teleported_to_hq: "&a已传送到工会据点"
+  teleported_to_warp: "&a已传送到工会传送点 &e{0}"
+  usage_warp: "&c用法: /gtp warp <名称>"
+  usage_setwarp: "&c用法: /gtp setwarp <名称>"
+  usage_delwarp: "&c用法: /gtp delwarp <名称>"
+  warps_header: "&6=== 工会传送点列表 ==="
+  warp_entry: "&e{0} &7- &f{1} ({2}, {3}, {4})"
+  info_header: "&6=== 工会信息: {0} ==="
+  info_members: "&7成员数量: &e{0}"
+  info_role: "&7你的角色: &e{0}"
+
+# 付费传送点相关
+toll:
+  not_enabled: "&c付费传送点功能未启用"
+  created: "&a付费传送点 &e{0} &a已创建，价格: &6{1}"
+  deleted: "&a付费传送点 &e{0} &a已删除"
+  price_updated: "&a传送点 &e{0} &a的价格已更新为 &6{1}"
+  insufficient_funds: "&c你的余额不足，需要 &6{0}"
+  owner_received: "&a你收到了 &6{0} &a的传送费用（来自 &e{1} &a使用传送点 &e{2}&a）"
+  teleported_toll: "&a已传送到 &e{0}&a，花费 &6{1}"
+  teleported_owner: "&a已传送到你的传送点 &e{0}"
+  teleported_bypass: "&a已传送到 &e{0} &7(免费)"
+  limit_reached: "&c你的付费传送点数量已达上限"
+  name_exists: "&c传送点名称 &e{0} &c已存在"
+  not_found: "&c找不到传送点: &e{0}"
+  not_owner: "&c你不是该传送点的所有者"
+  price_out_of_range: "&c价格必须在 &e{0} &c和 &e{1} &c之间"
+  free_not_allowed: "&c不允许创建免费传送点"
+  disabled: "&c传送点 &e{0} &c已被禁用"
+  no_warps: "&c没有任何公共传送点"
+  no_own_warps: "&c你还没有创建任何传送点"
+
+# 经济系统
+economy:
+  not_available: "&c经济系统不可用"
+
+# 通用命令
+command:
+  player_only: "&c此命令只能由玩家执行"
+  no_permission: "&c你没有权限执行此命令"
+  reload:
+    success: "&a配置已重新加载"
