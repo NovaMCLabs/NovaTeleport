@@ -173,12 +173,23 @@ teleport_log:
   # 记录的传送类型
   log_types:
     - tpa
+    - tpahere
     - home
     - warp
+    - spawn
     - rtp
     - back
     - portal
     - stele
+    - city
+    - party
+    - guild
+    - towny
+    - tollwarp
+    - deathback
+    - scroll
+    - rewind
+    - auto_world_teleport
   # 允许回溯的权限组
   rewind_permission: "novateleport.admin.rewind"
 

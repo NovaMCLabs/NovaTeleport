@@ -3,7 +3,7 @@
 
 # 是否启用付费传送点系统
 # Enable toll warp system
-enabled: false
+enabled: true
 
 # 模式：
 # - toll: 公开收费（默认）

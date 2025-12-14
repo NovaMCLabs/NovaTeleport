@@ -11,7 +11,6 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.scheduler.BukkitTask;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.concurrent.ConcurrentHashMap;

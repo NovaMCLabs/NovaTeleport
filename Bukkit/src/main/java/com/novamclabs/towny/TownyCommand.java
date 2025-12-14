@@ -1,14 +1,17 @@
 package com.novamclabs.towny;
 
 import com.novamclabs.StarTeleport;
+import com.palmergames.bukkit.towny.TownyAPI;
+import com.palmergames.bukkit.towny.object.Town;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.stream.Collectors;
 
 /**
  * Towny 城镇传送命令
@@ -62,13 +65,31 @@ public class TownyCommand implements CommandExecutor, TabCompleter {
     
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String label, String[] args) {
-        List<String> completions = new ArrayList<>();
-        
-        if (args.length == 1) {
-            // TODO: 可以添加城镇名称补全
-            // Can add town name completion here
+        if (!(sender instanceof Player)) {
+            return List.of();
         }
-        
-        return completions;
+        Player player = (Player) sender;
+        if (!manager.isEnabled()) {
+            return List.of();
+        }
+        if (!player.hasPermission("novateleport.towny.other")) {
+            return List.of();
+        }
+
+        if (args.length == 1) {
+            String prefix = args[0].toLowerCase(Locale.ROOT);
+            try {
+                return TownyAPI.getInstance().getTowns().stream()
+                    .map(Town::getName)
+                    .filter(n -> n != null && n.toLowerCase(Locale.ROOT).startsWith(prefix))
+                    .sorted(String.CASE_INSENSITIVE_ORDER)
+                    .limit(50)
+                    .collect(Collectors.toList());
+            } catch (Throwable ignored) {
+                return List.of();
+            }
+        }
+
+        return List.of();
     }
 }
