@@ -33,7 +33,7 @@ public class CityCommand implements CommandExecutor {
             if (w == null) { p.sendMessage(plugin.getLang().tr("warn.world_not_loaded", "world", worldName)); return true; }
             Location dest = new Location(w, x, y, z);
             int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-            TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
+            TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "city", () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
             return true;
         } else if ("proxy".equalsIgnoreCase(mode)) {
             String server = plugin.getConfig().getString("city.proxy.server", "hub");

@@ -164,7 +164,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         }
         try { if (store != null) store.setBack(mover.getUniqueId(), mover.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        BukkitTask task = TeleportUtil.delayedTeleportWithAnimation(plugin, mover, dest, delay, () -> {
+        BukkitTask task = TeleportUtil.delayedTeleportWithAnimation(plugin, mover, dest, delay, actionKey, () -> {
             cleanup(req);
             mover.sendMessage(plugin.getLang().t("tpa.accepted.complete"));
         });
@@ -250,7 +250,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             return true;
         }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, () -> p.sendMessage(plugin.getLang().t("homes.welcome")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, "home", () -> p.sendMessage(plugin.getLang().t("homes.welcome")));
         return true;
     }
 
@@ -309,7 +309,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             return true;
         }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, () -> p.sendMessage(plugin.getLang().tr("warps.arrived", "name", name)));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, "warp", () -> p.sendMessage(plugin.getLang().tr("warps.arrived", "name", name)));
         return true;
     }
 
@@ -346,7 +346,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!ensurePaid(p, "spawn")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().t("spawn.done")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, "spawn", () -> p.sendMessage(plugin.getLang().t("spawn.done")));
         return true;
     }
 
@@ -357,7 +357,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (back == null) { p.sendMessage(plugin.getLang().t("back.none")); return true; }
         if (!ensurePaid(p, "back")) { return true; }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, back, delay, () -> p.sendMessage(plugin.getLang().t("back.done")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, back, delay, "back", () -> p.sendMessage(plugin.getLang().t("back.done")));
         return true;
     }
 
@@ -391,7 +391,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!ensurePaid(p, "rtp")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp", () -> p.sendMessage(plugin.getLang().t("rtp.done")));
         return true;
     }
 
@@ -413,7 +413,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                     if (!ensurePaid(p, "rtp")) return;
                     try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
                     int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-                    com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
+                    com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp", () -> p.sendMessage(plugin.getLang().t("rtp.done")));
                 }
             });
             return true;
@@ -613,7 +613,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 } catch (Exception ignored) {
                 }
                 int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-                com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay,
+                com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp",
                     () -> p.sendMessage(plugin.getLang().t("rtp.done")));
             }
         }

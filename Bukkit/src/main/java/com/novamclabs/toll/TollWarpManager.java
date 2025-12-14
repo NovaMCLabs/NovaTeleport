@@ -282,14 +282,14 @@ public class TollWarpManager {
 
         // owner uses it for free
         if (warp.getOwnerId().equals(player.getUniqueId())) {
-            TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds,
+            TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "tollwarp",
                 () -> player.sendMessage(plugin.getLang().tr("toll.teleported_owner", "name", warp.getName())));
             return true;
         }
 
         // bypass permission
         if (player.hasPermission("novateleport.toll.bypass")) {
-            TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds,
+            TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "tollwarp",
                 () -> player.sendMessage(plugin.getLang().tr("toll.teleported_bypass", "name", warp.getName())));
             incrementUsage(warp);
             return true;
@@ -343,7 +343,7 @@ public class TollWarpManager {
         } catch (Exception ignored) {
         }
 
-        TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds,
+        TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "tollwarp",
             () -> player.sendMessage(plugin.getLang().tr("toll.teleported_toll", "name", warp.getName(), "price", EconomyUtil.format(price))));
 
         incrementUsage(warp);

@@ -127,7 +127,7 @@ public class GuildCommand implements CommandExecutor, TabCompleter {
         } catch (Exception ignored) {
         }
 
-        TeleportUtil.delayedTeleportWithAnimation(plugin, player, home, delay, () ->
+        TeleportUtil.delayedTeleportWithAnimation(plugin, player, home, delay, "guild", () ->
             player.sendMessage(plugin.getLang().t("guild.teleported_to_hq")));
 
         return true;

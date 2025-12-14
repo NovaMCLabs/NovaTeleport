@@ -63,7 +63,7 @@ public class DeathManager implements Listener, CommandExecutor {
             if (dest == null) dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, w, new java.util.Random());
             if (dest != null) {
                 int delay = conf.getInt("teleport_delay_seconds", plugin.getConfig().getInt("commands.teleport_delay_seconds", 3));
-                TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
+                TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp", () -> p.sendMessage(plugin.getLang().t("rtp.done")));
                 return;
             }
         }
@@ -89,7 +89,7 @@ public class DeathManager implements Listener, CommandExecutor {
         Location dest = getLastDeath(p);
         if (dest == null) { p.sendMessage(plugin.getLang().t("death.none")); return true; }
         int delay = conf.getInt("teleport_delay_seconds", plugin.getConfig().getInt("commands.teleport_delay_seconds", 3));
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "deathback", () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
         return true;
     }
 

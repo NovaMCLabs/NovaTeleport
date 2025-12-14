@@ -47,10 +47,16 @@ public class TeleportUtil {
     }
 
     public static BukkitTask delayedTeleportWithAnimation(StarTeleport plugin, Player player, Location target, int delaySeconds) {
-        return delayedTeleportWithAnimation(plugin, player, target, delaySeconds, null);
+        return delayedTeleportWithAnimation(plugin, player, target, delaySeconds, null, null);
     }
 
     public static BukkitTask delayedTeleportWithAnimation(StarTeleport plugin, Player player, Location target, int delaySeconds, Runnable onComplete) {
+        return delayedTeleportWithAnimation(plugin, player, target, delaySeconds, null, onComplete);
+    }
+
+    public static BukkitTask delayedTeleportWithAnimation(StarTeleport plugin, Player player, Location target, int delaySeconds, String type, Runnable onComplete) {
+        final Location from = player.getLocation().clone();
+
         if (delaySeconds <= 0) {
             if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPre(player, target);
             playPrepare(plugin, player, target);
@@ -59,6 +65,7 @@ public class TeleportUtil {
                 return null;
             }
             teleportRespectingBoat(plugin, player, target);
+            recordTeleport(plugin, player, type, from, target);
             applyPostEffect(player, readPostEffectConfig(plugin));
             playAfter(plugin, player, target);
             if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPost(player, target);
@@ -96,6 +103,7 @@ public class TeleportUtil {
                         return;
                     }
                     teleportRespectingBoat(plugin, player, target);
+                    recordTeleport(plugin, player, type, from, target);
                     if (plugin.getConfig().getBoolean("features.post_effect_enabled", true))
                         applyPostEffect(player, readPostEffectConfig(plugin));
                     if (animation) playAfter(plugin, player, target);
@@ -106,6 +114,16 @@ public class TeleportUtil {
             }
         };
         return runnable.runTaskTimer(plugin, 0L, 20L);
+    }
+
+    private static void recordTeleport(StarTeleport plugin, Player player, String type, Location from, Location to) {
+        if (type == null || type.isBlank()) return;
+        try {
+            if (plugin.getTeleportLogManager() != null) {
+                plugin.getTeleportLogManager().record(player.getUniqueId(), type, from, to);
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     // 若开启配置且玩家在船上，则携带船与乘客一起传送

@@ -89,6 +89,6 @@ public class ScrollManager implements Listener {
         // 扣费由指令/整体经济开关控制，卷轴本身只消耗 | Only consume the scroll here
         it.setAmount(it.getAmount() - 1);
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().t("scroll.done")));
+        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, "scroll", () -> p.sendMessage(plugin.getLang().t("scroll.done")));
     }
 }

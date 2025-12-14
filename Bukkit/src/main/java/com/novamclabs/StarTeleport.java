@@ -39,6 +39,8 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private com.novamclabs.guild.GuildWarpManager guildWarpManager;
     private com.novamclabs.toll.TollWarpManager tollWarpManager;
     private com.novamclabs.towny.TownyTeleportManager townyTeleportManager;
+    private com.novamclabs.log.TeleportLogManager teleportLogManager;
+
     // 使用 ConcurrentHashMap 来避免并发问题 | Use concurrent map to avoid concurrency issues
     private final Map<Player, BukkitTask> taskMap = new ConcurrentHashMap<>();
     // 记录玩家是否可以触发传送（用于控制重复触发）
@@ -81,6 +83,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
 
         // Java 菜单配置（独立文件）
         this.javaMenus = new com.novamclabs.menu.JavaMenuConfig(this);
+
+        // 传送日志
+        this.teleportLogManager = new com.novamclabs.log.TeleportLogManager(this);
 
         // 初始化数据存储 | init storage
         String serverName = getConfig().getString("network.server_name", "local");
@@ -186,6 +191,14 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             getServer().getPluginManager().registerEvents(twcmd, this);
         }
 
+        // 传送日志 / 回溯
+        if (getCommand("tplog") != null) {
+            com.novamclabs.log.TeleportLogCommand lcmd = new com.novamclabs.log.TeleportLogCommand(this, this.teleportLogManager);
+            getCommand("tplog").setExecutor(lcmd);
+            getCommand("tplog").setTabCompleter(lcmd);
+            getServer().getPluginManager().registerEvents(lcmd, this);
+        }
+
         getLogger().info(lang.t("plugin.startup"));
     }
 
@@ -212,6 +225,11 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         if (this.javaMenus != null) this.javaMenus.reload();
         com.novamclabs.util.RegionGuardUtil.init(this);
         if (this.steleManager != null) this.steleManager.reload();
+        if (this.guildManager != null) this.guildManager.reload();
+        if (this.guildWarpManager != null) this.guildWarpManager.reload();
+        if (this.townyTeleportManager != null) this.townyTeleportManager.reload();
+        if (this.tollWarpManager != null) this.tollWarpManager.reload();
+        if (this.teleportLogManager != null) this.teleportLogManager.reloadAll();
     }
     
     /**
@@ -435,6 +453,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     public com.novamclabs.menu.JavaMenuConfig getJavaMenus() {
         return javaMenus;
     }
+    public com.novamclabs.log.TeleportLogManager getTeleportLogManager() {
+        return teleportLogManager;
+    }
     public com.novamclabs.animations.AnimationManager getAnimationManager() { return this.animationManager; }
     public com.novamclabs.rtp.RtpPoolManager getRtpPoolManager() { return this.rtpPoolManager; }
     public com.novamclabs.scripting.ScriptingManager getScriptingManager() { return this.scriptingManager; }
@@ -446,7 +467,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
      */
     private void scheduleTeleport(Player player, World targetWorld) {
         org.bukkit.Location target = targetWorld.getSpawnLocation();
-        BukkitTask task = com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(this, player, target, teleportDelay, () -> {
+        BukkitTask task = com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(this, player, target, teleportDelay, "auto_world_teleport", () -> {
             // 传送完成后的回调
             BukkitTask t = taskMap.remove(player);
             if (t != null) t.cancel();

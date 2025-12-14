@@ -218,7 +218,7 @@ public class GuildWarpManager {
         } catch (Exception ignored) {
         }
 
-        TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds,
+        TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "guild",
             () -> player.sendMessage(plugin.getLang().tr("guild.teleported_to_warp", "name", warpName)));
         return true;
     }

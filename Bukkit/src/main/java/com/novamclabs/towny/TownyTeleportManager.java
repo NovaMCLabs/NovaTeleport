@@ -94,7 +94,7 @@ public class TownyTeleportManager {
             } catch (Exception ignored) {
             }
 
-            TeleportUtil.delayedTeleportWithAnimation(plugin, player, spawnLoc, homeDelay, () ->
+            TeleportUtil.delayedTeleportWithAnimation(plugin, player, spawnLoc, homeDelay, "towny", () ->
                 player.sendMessage(plugin.getLang().tr("towny.teleported_to_town", "town", town.getName())));
 
             return true;
@@ -145,7 +145,7 @@ public class TownyTeleportManager {
             } catch (Exception ignored) {
             }
 
-            TeleportUtil.delayedTeleportWithAnimation(plugin, player, spawnLoc, otherDelay, () ->
+            TeleportUtil.delayedTeleportWithAnimation(plugin, player, spawnLoc, otherDelay, "towny", () ->
                 player.sendMessage(plugin.getLang().tr("towny.teleported_to_town", "town", town.getName())));
 
             return true;

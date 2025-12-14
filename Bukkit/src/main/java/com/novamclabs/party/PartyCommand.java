@@ -137,7 +137,7 @@ public class PartyCommand implements CommandExecutor {
                     if (m == null || m.getUniqueId().equals(p.getUniqueId())) continue;
                     double angle = (Math.PI * 2 / Math.max(1, targetMembers.size())) * (idx++);
                     Location dest = p.getLocation().clone().add(Math.cos(angle) * 1.5, 0, Math.sin(angle) * 1.5);
-                    TeleportUtil.delayedTeleportWithAnimation(plugin, m, dest, delay, () -> m.sendMessage(plugin.getLang().t("party.tp.done")));
+                    TeleportUtil.delayedTeleportWithAnimation(plugin, m, dest, delay, "party", () -> m.sendMessage(plugin.getLang().t("party.tp.done")));
                     m.sendMessage(plugin.getLang().t("party.tp.start"));
                 }
                 p.sendMessage(plugin.getLang().t("party.tp.leader"));

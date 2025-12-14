@@ -298,7 +298,7 @@ public class SteleManager implements Listener {
         }
 
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "stele", () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
     }
 
     private ItemStack tagAction(ItemStack it, String action, String value) {
