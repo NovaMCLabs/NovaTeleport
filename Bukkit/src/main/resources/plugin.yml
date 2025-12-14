@@ -3,7 +3,7 @@ version: 2.0-SNAPSHOT
 main: com.novamclabs.StarTeleport
 api-version: 1.16
 folia-supported: true
-softdepend: [Vault, PlaceholderAPI, floodgate, Geyser, Parties, BetterTeams, SimpleClans, Factions, Guilds, WorldGuard, PlotSquared, Residence, Lands]
+softdepend: [Vault, PlaceholderAPI, floodgate, Geyser, Parties, BetterTeams, SimpleClans, Factions, Guilds, WorldGuard, PlotSquared, Residence, Lands, GriefDefender, Towny]
 
 permissions:
   novateleport.pass:
@@ -66,6 +66,38 @@ permissions:
   novateleport.command.party:
     description: 使用 /party 组队命令
     default: true
+
+  novateleport.command.tpmenu:
+    description: 使用 /tpmenu 传送菜单
+    default: true
+
+  novateleport.guild.home:
+    description: 使用 /gtp home 工会据点传送
+    default: true
+  novateleport.guild.admin:
+    description: 管理工会据点/传送点
+    default: op
+
+  novateleport.towny.home:
+    description: 传送到自己的城镇
+    default: true
+  novateleport.towny.other:
+    description: 传送到其他城镇
+    default: op
+
+  novateleport.toll.create:
+    description: 创建付费传送点
+    default: true
+  novateleport.toll.delete.others:
+    description: 删除他人付费传送点
+    default: op
+  novateleport.toll.bypass:
+    description: 付费传送点免付费
+    default: op
+
+  novateleport.admin.rewind:
+    description: 使用 /tplog 回溯玩家传送
+    default: op
 
 commands:
   stp:
@@ -161,3 +193,45 @@ commands:
     description: 强制传送离线玩家（控制台可用）
     usage: /forcetp <player> <world> <x> <y> <z>
     permission: novateleport.admin
+
+  homes:
+    description: 列出/选择我的家
+    usage: /homes
+    permission: novateleport.command.home
+
+  warps:
+    description: 列出/选择公共传送点
+    usage: /warps
+    permission: novateleport.command.warp
+
+  rtpgui:
+    description: 打开随机传送 GUI
+    usage: /rtpgui
+    permission: novateleport.command.rtp
+
+  tpmenu:
+    description: 打开传送菜单
+    usage: /tpmenu
+    permission: novateleport.command.tpmenu
+    aliases: [tpm]
+
+  gtp:
+    description: 工会传送
+    usage: /gtp <home|sethome|warp|setwarp|delwarp|list|info>
+    permission: novateleport.guild.home
+
+  towntp:
+    description: Towny 城镇传送
+    usage: /towntp [城镇名]
+    permission: novateleport.towny.home
+
+  tollwarp:
+    description: 付费传送点
+    usage: /tollwarp <list|mywarps|create|delete|setprice|tp|info>
+    permission: novateleport.toll.create
+    aliases: [publichomes]
+
+  tplog:
+    description: 传送日志与回溯
+    usage: /tplog <玩家>
+    permission: novateleport.admin.rewind

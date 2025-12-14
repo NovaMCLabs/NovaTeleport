@@ -12,6 +12,7 @@
     <modules>
         <module>Sqlit-Lib</module>
         <module>Common</module>
+        <module>ExternalPluginStubs</module>
         <module>Bukkit</module>
         <module>BungeeCore</module>
         <module>Velocity</module>

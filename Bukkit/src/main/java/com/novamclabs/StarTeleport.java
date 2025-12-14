@@ -26,11 +26,19 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private com.novamclabs.rtp.RtpPoolManager rtpPoolManager;
     private com.novamclabs.scrolls.ScrollManager scrollManager;
     private com.novamclabs.party.PartyManager partyManager;
+    private com.novamclabs.party.adapter.PartyAdapterManager partyAdapterManager;
+    private com.novamclabs.menu.JavaMenuConfig javaMenus;
     private com.novamclabs.scripting.ScriptingManager scriptingManager;
     private com.novamclabs.stele.SteleManager steleManager;
     private com.novamclabs.death.DeathManager deathManager;
     private com.novamclabs.cross.CrossServerService crossServerService;
     private com.novamclabs.offline.OfflineTeleportManager offlineTeleportManager;
+
+    // Optional feature managers
+    private com.novamclabs.guild.GuildManager guildManager;
+    private com.novamclabs.guild.GuildWarpManager guildWarpManager;
+    private com.novamclabs.toll.TollWarpManager tollWarpManager;
+    private com.novamclabs.towny.TownyTeleportManager townyTeleportManager;
     // 使用 ConcurrentHashMap 来避免并发问题 | Use concurrent map to avoid concurrency issues
     private final Map<Player, BukkitTask> taskMap = new ConcurrentHashMap<>();
     // 记录玩家是否可以触发传送（用于控制重复触发）
@@ -70,6 +78,10 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         // 初始化语言系统
         this.lang = new com.novamclabs.lang.LanguageManager(this);
         this.lang.ensureDefaults("zh_CN","en_US");
+
+        // Java 菜单配置（独立文件）
+        this.javaMenus = new com.novamclabs.menu.JavaMenuConfig(this);
+
         // 初始化数据存储 | init storage
         String serverName = getConfig().getString("network.server_name", "local");
         this.dataStore = new com.novamclabs.storage.DataStore(getDataFolder(), serverName);
@@ -92,12 +104,16 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         this.steleManager = new com.novamclabs.stele.SteleManager(this);
 
         loadConfig();
+
+        // 初始化领地保护适配器
+        com.novamclabs.util.RegionGuardUtil.init(this);
+
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
         getCommand("stp").setExecutor(this);
         // 注册传送相关命令 | Register commands
         com.novamclabs.commands.TeleportCommandHandler handler = new com.novamclabs.commands.TeleportCommandHandler(this);
-        String[] cmds = {"tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","setwarp","warp","delwarp","spawn","back","rtp"};
+        String[] cmds = {"tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","homes","setwarp","warp","delwarp","warps","spawn","back","rtp","rtpgui","tpmenu"};
         for (String c : cmds) {
             if (getCommand(c) != null) {
                 getCommand(c).setExecutor(handler);
@@ -120,17 +136,19 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             getCommand("novateleport").setExecutor(router);
             getCommand("novateleport").setTabCompleter(router);
         }
+        // 外部队伍适配器 | external party adapter
+        this.partyAdapterManager = new com.novamclabs.party.adapter.PartyAdapterManager();
+        this.partyAdapterManager.detectAndRegister(this, () -> com.novamclabs.party.PartyNameDisplay.refreshAll(this.partyAdapterManager.getActive()));
+        com.novamclabs.party.PartyNameDisplay.refreshAll(this.partyAdapterManager.getActive());
+        getServer().getScheduler().runTaskTimer(this,
+                () -> com.novamclabs.party.PartyNameDisplay.refreshAll(this.partyAdapterManager.getActive()),
+                200L, 200L);
+
         if (getCommand("party") != null) {
             // 内置组队系统 | built-in party system
             this.partyManager = new com.novamclabs.party.PartyManager(this);
-            getCommand("party").setExecutor(new com.novamclabs.party.PartyCommand(this, partyManager));
+            getCommand("party").setExecutor(new com.novamclabs.party.PartyCommand(this, partyManager, this.partyAdapterManager));
         }
-        // 外部队伍适配器 | external party adapter
-        com.novamclabs.party.adapter.PartyAdapterManager adapterMgr = new com.novamclabs.party.adapter.PartyAdapterManager();
-        adapterMgr.detectAndRegister(this, () -> com.novamclabs.party.PartyNameDisplay.refreshAll(adapterMgr.getActive()));
-        // 初始刷新 & 定时刷新（兜底）
-        com.novamclabs.party.PartyNameDisplay.refreshAll(adapterMgr.getActive());
-        getServer().getScheduler().runTaskTimer(this, () -> com.novamclabs.party.PartyNameDisplay.refreshAll(adapterMgr.getActive()), 200L, 200L);
         // 其它独立命令注册 | other commands
         if (getCommand("stele") != null) {
             getCommand("stele").setExecutor(new com.novamclabs.stele.SteleCommand(this, steleManager));
@@ -141,6 +159,33 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         if (getCommand("forcetp") != null) {
             getCommand("forcetp").setExecutor(offlineTeleportManager);
         }
+
+        // 工会统一传送
+        this.guildManager = new com.novamclabs.guild.GuildManager(this);
+        this.guildWarpManager = new com.novamclabs.guild.GuildWarpManager(this, this.guildManager);
+        if (getCommand("gtp") != null) {
+            com.novamclabs.guild.GuildCommand gcmd = new com.novamclabs.guild.GuildCommand(this, this.guildManager, this.guildWarpManager);
+            getCommand("gtp").setExecutor(gcmd);
+            getCommand("gtp").setTabCompleter(gcmd);
+        }
+
+        // Towny 城镇传送
+        this.townyTeleportManager = new com.novamclabs.towny.TownyTeleportManager(this);
+        if (getCommand("towntp") != null) {
+            com.novamclabs.towny.TownyCommand tcmd = new com.novamclabs.towny.TownyCommand(this, this.townyTeleportManager);
+            getCommand("towntp").setExecutor(tcmd);
+            getCommand("towntp").setTabCompleter(tcmd);
+        }
+
+        // 付费传送点
+        this.tollWarpManager = new com.novamclabs.toll.TollWarpManager(this);
+        if (getCommand("tollwarp") != null) {
+            com.novamclabs.toll.TollWarpCommand twcmd = new com.novamclabs.toll.TollWarpCommand(this, this.tollWarpManager);
+            getCommand("tollwarp").setExecutor(twcmd);
+            getCommand("tollwarp").setTabCompleter(twcmd);
+            getServer().getPluginManager().registerEvents(twcmd, this);
+        }
+
         getLogger().info(lang.t("plugin.startup"));
     }
 
@@ -164,6 +209,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         if (this.lang != null) this.lang.load(lc);
         com.novamclabs.util.EconomyUtil.setup(this);
         loadConfig();
+        if (this.javaMenus != null) this.javaMenus.reload();
+        com.novamclabs.util.RegionGuardUtil.init(this);
+        if (this.steleManager != null) this.steleManager.reload();
     }
     
     /**
@@ -383,6 +431,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     }
     public com.novamclabs.lang.LanguageManager getLang() {
         return lang;
+    }
+    public com.novamclabs.menu.JavaMenuConfig getJavaMenus() {
+        return javaMenus;
     }
     public com.novamclabs.animations.AnimationManager getAnimationManager() { return this.animationManager; }
     public com.novamclabs.rtp.RtpPoolManager getRtpPoolManager() { return this.rtpPoolManager; }
