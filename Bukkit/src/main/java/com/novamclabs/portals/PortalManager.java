@@ -173,7 +173,7 @@ public class PortalManager implements Listener {
         if (w == null) return;
         Location dest = new Location(w, resolveCoord(def.x, feet.getX()), resolveCoord(def.y, feet.getY()), resolveCoord(def.z, feet.getZ()));
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, null);
+        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "portal", null);
     }
 
     private double resolveCoord(String v, double fallback) {

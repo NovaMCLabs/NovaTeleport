@@ -1,6 +1,7 @@
 package com.novamclabs.commands;
 
 import com.novamclabs.StarTeleport;
+import com.novamclabs.menu.JavaMenuConfig;
 import com.novamclabs.storage.DataStore;
 import com.novamclabs.util.BedrockUtil;
 import com.novamclabs.util.TeleportUtil;
@@ -11,10 +12,12 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.permissions.PermissionAttachmentInfo;
+import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.io.IOException;
 import java.util.*;
@@ -26,9 +29,38 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     private final DataStore store;
     private final Map<UUID, Integer> rtpRadiusChoices = new ConcurrentHashMap<>();
 
+    private final JavaMenuConfig menus;
+    private final NamespacedKey keyAction;
+    private final NamespacedKey keyValue;
+
+    private static final class MenuHolder implements InventoryHolder {
+        private final String id;
+        private Inventory inventory;
+
+        private MenuHolder(String id) {
+            this.id = id;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        private void bind(Inventory inventory) {
+            this.inventory = inventory;
+        }
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
+        }
+    }
+
     public TeleportCommandHandler(StarTeleport plugin) {
         this.plugin = plugin;
         this.store = plugin.getDataStore();
+        this.menus = plugin.getJavaMenus();
+        this.keyAction = new NamespacedKey(plugin, "menu_action");
+        this.keyValue = new NamespacedKey(plugin, "menu_value");
         Bukkit.getPluginManager().registerEvents(this, plugin);
     }
 
@@ -132,7 +164,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         }
         try { if (store != null) store.setBack(mover.getUniqueId(), mover.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        BukkitTask task = TeleportUtil.delayedTeleportWithAnimation(plugin, mover, dest, delay, () -> {
+        BukkitTask task = TeleportUtil.delayedTeleportWithAnimation(plugin, mover, dest, delay, actionKey, () -> {
             cleanup(req);
             mover.sendMessage(plugin.getLang().t("tpa.accepted.complete"));
         });
@@ -218,7 +250,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             return true;
         }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, () -> p.sendMessage(plugin.getLang().t("homes.welcome")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, "home", () -> p.sendMessage(plugin.getLang().t("homes.welcome")));
         return true;
     }
 
@@ -244,16 +276,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 p.sendMessage("§6" + plugin.getLang().t("menu.homes.title") + ": §f" + String.join(", ", list));
             }
         } else {
-            String title = plugin.getLang().t("menu.homes.title");
-            Inventory inv = Bukkit.createInventory(p, 27, title);
-            for (String name : list) {
-                ItemStack it = new ItemStack(Material.ENDER_PEARL);
-                ItemMeta im = it.getItemMeta();
-                im.setDisplayName(plugin.getLang().tr("display.home.item", "name", name));
-                it.setItemMeta(im);
-                inv.addItem(it);
-            }
-            p.openInventory(inv);
+            openHomesMenu(p, list);
         }
         return true;
     }
@@ -286,7 +309,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             return true;
         }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, () -> p.sendMessage(plugin.getLang().tr("warps.arrived", "name", name)));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, "warp", () -> p.sendMessage(plugin.getLang().tr("warps.arrived", "name", name)));
         return true;
     }
 
@@ -311,16 +334,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 p.sendMessage("§6" + plugin.getLang().t("menu.warps.title") + ": §f" + String.join(", ", list));
             }
         } else {
-            String title = plugin.getLang().t("menu.warps.title");
-            Inventory inv = Bukkit.createInventory(p, 27, title);
-            for (String name : list) {
-                ItemStack it = new ItemStack(Material.ENDER_EYE);
-                ItemMeta im = it.getItemMeta();
-                im.setDisplayName(plugin.getLang().tr("display.warp.item", "name", name));
-                it.setItemMeta(im);
-                inv.addItem(it);
-            }
-            p.openInventory(inv);
+            openWarpsMenu(p, list);
         }
         return true;
     }
@@ -332,7 +346,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!ensurePaid(p, "spawn")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, () -> p.sendMessage(plugin.getLang().t("spawn.done")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, "spawn", () -> p.sendMessage(plugin.getLang().t("spawn.done")));
         return true;
     }
 
@@ -343,7 +357,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (back == null) { p.sendMessage(plugin.getLang().t("back.none")); return true; }
         if (!ensurePaid(p, "back")) { return true; }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, back, delay, () -> p.sendMessage(plugin.getLang().t("back.done")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, back, delay, "back", () -> p.sendMessage(plugin.getLang().t("back.done")));
         return true;
     }
 
@@ -377,7 +391,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!ensurePaid(p, "rtp")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp", () -> p.sendMessage(plugin.getLang().t("rtp.done")));
         return true;
     }
 
@@ -399,7 +413,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                     if (!ensurePaid(p, "rtp")) return;
                     try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
                     int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-                    com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
+                    com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp", () -> p.sendMessage(plugin.getLang().t("rtp.done")));
                 }
             });
             return true;
@@ -412,13 +426,21 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         int defaultRadius = plugin.getConfig().getInt("rtp.radius", 2000);
         rtpRadiusChoices.putIfAbsent(p.getUniqueId(), defaultRadius);
         int radius = rtpRadiusChoices.get(p.getUniqueId());
-        String title = plugin.getLang().t("menu.rtp.title");
-        Inventory inv = Bukkit.createInventory(p, 27, title);
         int step = plugin.getConfig().getInt("rtp.gui.step", 500);
-        inv.setItem(11, named(new ItemStack(Material.REDSTONE), "§c" + plugin.getLang().tr("menu.rtp.decrease", "step", step)));
-        inv.setItem(13, named(new ItemStack(Material.COMPASS), "§e" + plugin.getLang().tr("menu.rtp.current", "radius", radius)));
-        inv.setItem(15, named(new ItemStack(Material.SLIME_BALL), "§a" + plugin.getLang().tr("menu.rtp.increase", "step", step)));
-        inv.setItem(22, named(new ItemStack(Material.ENDER_PEARL), "§d" + plugin.getLang().t("menu.rtp.start")));
+
+        Map<String, Object> placeholders = new HashMap<>();
+        placeholders.put("radius", radius);
+        placeholders.put("step", step);
+
+        MenuHolder holder = new MenuHolder("rtp");
+        Inventory inv = Bukkit.createInventory(holder, menus.getSize("rtp", 27), menus.getTitle("rtp", placeholders));
+        holder.bind(inv);
+
+        for (JavaMenuConfig.FixedItem it : menus.getFixedItems("rtp", placeholders)) {
+            ItemStack stack = tagAction(it.stack(), it.action(), null);
+            inv.setItem(it.slot(), stack);
+        }
+
         p.openInventory(inv);
     }
 
@@ -441,21 +463,70 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 p.sendMessage(plugin.getLang().t("bedrock.menu.tip.back"));
             }
         } else {
-            String title = plugin.getLang().t("menu.main.title");
-            Inventory inv = Bukkit.createInventory(p, 27, title);
-            inv.setItem(10, named(new ItemStack(Material.RED_BED), "§a" + plugin.getLang().t("menu.main.homes")));
-            inv.setItem(12, named(new ItemStack(Material.ENDER_EYE), "§b" + plugin.getLang().t("menu.main.warps")));
-            inv.setItem(14, named(new ItemStack(Material.ENDER_PEARL), "§d" + plugin.getLang().t("menu.main.rtp")));
-            inv.setItem(16, named(new ItemStack(Material.COMPASS), "§e" + plugin.getLang().t("menu.main.back")));
-            p.openInventory(inv);
+            openMainMenu(p);
         }
         return true;
     }
 
-    private ItemStack named(ItemStack it, String name) {
-        ItemMeta im = it.getItemMeta();
-        im.setDisplayName(name);
-        it.setItemMeta(im);
+    private void openMainMenu(Player p) {
+        MenuHolder holder = new MenuHolder("main");
+        Inventory inv = Bukkit.createInventory(holder, menus.getSize("main", 27), menus.getTitle("main", Collections.emptyMap()));
+        holder.bind(inv);
+
+        for (JavaMenuConfig.FixedItem it : menus.getFixedItems("main", Collections.emptyMap())) {
+            inv.setItem(it.slot(), tagAction(it.stack(), it.action(), null));
+        }
+
+        p.openInventory(inv);
+    }
+
+    private void openHomesMenu(Player p, List<String> homes) {
+        JavaMenuConfig.Template tpl = menus.getTemplate("homes");
+        MenuHolder holder = new MenuHolder("homes");
+        Inventory inv = Bukkit.createInventory(holder, menus.getSize("homes", 27), menus.getTitle("homes", Collections.emptyMap()));
+        holder.bind(inv);
+
+        int limit = inv.getSize();
+        for (String name : homes) {
+            if (inv.firstEmpty() < 0 || inv.firstEmpty() >= limit) break;
+            Map<String, Object> placeholders = new HashMap<>();
+            placeholders.put("name", name);
+            ItemStack stack = menus.buildTemplateItem(tpl, placeholders);
+            inv.addItem(tagAction(stack, tpl != null ? tpl.action() : "home", name));
+        }
+
+        p.openInventory(inv);
+    }
+
+    private void openWarpsMenu(Player p, List<String> warps) {
+        JavaMenuConfig.Template tpl = menus.getTemplate("warps");
+        MenuHolder holder = new MenuHolder("warps");
+        Inventory inv = Bukkit.createInventory(holder, menus.getSize("warps", 27), menus.getTitle("warps", Collections.emptyMap()));
+        holder.bind(inv);
+
+        int limit = inv.getSize();
+        for (String name : warps) {
+            if (inv.firstEmpty() < 0 || inv.firstEmpty() >= limit) break;
+            Map<String, Object> placeholders = new HashMap<>();
+            placeholders.put("name", name);
+            ItemStack stack = menus.buildTemplateItem(tpl, placeholders);
+            inv.addItem(tagAction(stack, tpl != null ? tpl.action() : "warp", name));
+        }
+
+        p.openInventory(inv);
+    }
+
+    private ItemStack tagAction(ItemStack it, String action, String value) {
+        if (it == null) return null;
+        ItemMeta meta = it.getItemMeta();
+        if (meta == null) return it;
+        if (action != null && !action.isEmpty()) {
+            meta.getPersistentDataContainer().set(keyAction, PersistentDataType.STRING, action);
+        }
+        if (value != null) {
+            meta.getPersistentDataContainer().set(keyValue, PersistentDataType.STRING, value);
+        }
+        it.setItemMeta(meta);
         return it;
     }
 
@@ -471,67 +542,79 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     @EventHandler
     public void onMenuClick(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player)) return;
-        if (e.getView().getTitle() == null) return;
-        String title = e.getView().getTitle();
-        String mainTitle = plugin.getLang().t("menu.main.title");
-        String warpsTitle = plugin.getLang().t("menu.warps.title");
-        String homesTitle = plugin.getLang().t("menu.homes.title");
-        String rtpTitle = plugin.getLang().t("menu.rtp.title");
-        if (!title.equals(mainTitle) && !title.equals(warpsTitle) && !title.equals(homesTitle) && !title.equals(rtpTitle)) return;
+        if (!(e.getInventory().getHolder() instanceof MenuHolder)) return;
+
         e.setCancelled(true);
         Player p = (Player) e.getWhoClicked();
+
         ItemStack current = e.getCurrentItem();
-        if (current == null || !current.hasItemMeta() || !current.getItemMeta().hasDisplayName()) return;
-        String name = current.getItemMeta().getDisplayName();
-        if (title.equals(mainTitle)) {
-            String nHomes = plugin.getLang().t("menu.main.homes");
-            String nWarps = plugin.getLang().t("menu.main.warps");
-            String nRtp = plugin.getLang().t("menu.main.rtp");
-            String nBack = plugin.getLang().t("menu.main.back");
-            String stripped = ChatColor.stripColor(name);
-            if (stripped.contains(nHomes)) { p.closeInventory(); handleHomes(p); }
-            else if (stripped.contains(nWarps)) { p.closeInventory(); handleWarps(p); }
-            else if (stripped.contains(nRtp)) { p.closeInventory(); openRtpGui(p); }
-            else if (stripped.contains(nBack)) { p.closeInventory(); handleBack(p); }
-        } else if (title.equals(warpsTitle)) {
-            String prefix = plugin.getLang().t("display.warp.prefix");
-            String warp = ChatColor.stripColor(name).replace(prefix, "").trim();
-            p.closeInventory(); handleWarp(p, new String[]{warp});
-        } else if (title.equals(homesTitle)) {
-            String prefix = plugin.getLang().t("display.home.prefix");
-            String home = ChatColor.stripColor(name).replace(prefix, "").trim();
-            p.closeInventory(); handleHome(p, new String[]{home});
-        } else if (title.equals(rtpTitle)) {
-            int step = plugin.getConfig().getInt("rtp.gui.step", 500);
-            String dec = plugin.getLang().tr("menu.rtp.decrease", "step", step);
-            String inc = plugin.getLang().tr("menu.rtp.increase", "step", step);
-            String currentLabel = plugin.getLang().t("menu.rtp.current");
-            String start = plugin.getLang().t("menu.rtp.start");
-            String stripped = ChatColor.stripColor(name);
-            if (stripped.contains(dec.replace("§", ""))) {
+        if (current == null || !current.hasItemMeta()) return;
+        ItemMeta meta = current.getItemMeta();
+        if (meta == null) return;
+
+        String action = meta.getPersistentDataContainer().get(keyAction, PersistentDataType.STRING);
+        String value = meta.getPersistentDataContainer().get(keyValue, PersistentDataType.STRING);
+        if (action == null || action.isEmpty()) return;
+
+        switch (action) {
+            case "open_homes" -> {
+                p.closeInventory();
+                handleHomes(p);
+            }
+            case "open_warps" -> {
+                p.closeInventory();
+                handleWarps(p);
+            }
+            case "open_rtp" -> {
+                p.closeInventory();
+                openRtpGui(p);
+            }
+            case "do_back" -> {
+                p.closeInventory();
+                handleBack(p);
+            }
+            case "home" -> {
+                if (value == null) return;
+                p.closeInventory();
+                handleHome(p, new String[]{value});
+            }
+            case "warp" -> {
+                if (value == null) return;
+                p.closeInventory();
+                handleWarp(p, new String[]{value});
+            }
+            case "rtp_decrease" -> {
+                int step = plugin.getConfig().getInt("rtp.gui.step", 500);
                 int radius = rtpRadiusChoices.getOrDefault(p.getUniqueId(), plugin.getConfig().getInt("rtp.radius", 2000));
                 radius = Math.max(step, radius - step);
                 rtpRadiusChoices.put(p.getUniqueId(), radius);
                 openRtpGui(p);
-            } else if (stripped.contains(inc.replace("§", ""))) {
+            }
+            case "rtp_increase" -> {
+                int step = plugin.getConfig().getInt("rtp.gui.step", 500);
                 int radius = rtpRadiusChoices.getOrDefault(p.getUniqueId(), plugin.getConfig().getInt("rtp.radius", 2000));
                 int max = com.novamclabs.util.RTPUtil.loadSettings(plugin, p.getWorld()).radius;
                 radius = Math.min(max, radius + step);
                 rtpRadiusChoices.put(p.getUniqueId(), radius);
                 openRtpGui(p);
-            } else if (stripped.contains(start.replace("§", ""))) {
+            }
+            case "rtp_start" -> {
                 p.closeInventory();
                 int radius = rtpRadiusChoices.getOrDefault(p.getUniqueId(), plugin.getConfig().getInt("rtp.radius", 2000));
                 java.util.Random rnd = new java.util.Random();
                 org.bukkit.Location dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, p.getWorld(), rnd, radius);
                 if (dest == null) {
                     p.sendMessage(plugin.getLang().t("rtp.no_safe"));
-                } else {
-                    if (!ensurePaid(p, "rtp")) { return; }
-                    try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
-                    int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-                    com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("rtp.done")));
+                    return;
                 }
+                if (!ensurePaid(p, "rtp")) return;
+                try {
+                    store.setBack(p.getUniqueId(), p.getLocation());
+                } catch (Exception ignored) {
+                }
+                int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
+                com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp",
+                    () -> p.sendMessage(plugin.getLang().t("rtp.done")));
             }
         }
     }

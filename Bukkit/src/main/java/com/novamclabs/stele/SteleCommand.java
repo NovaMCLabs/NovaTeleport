@@ -65,7 +65,7 @@ public class SteleCommand implements CommandExecutor {
                 Location dest = manager.getSteleLocation(name);
                 if (dest == null) { p.sendMessage(plugin.getLang().t("warps.not_found")); return true; }
                 int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-                com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
+                com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "stele", () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
                 return true;
             }
             case "activatefor": {

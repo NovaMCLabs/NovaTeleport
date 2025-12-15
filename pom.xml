@@ -12,6 +12,7 @@
     <modules>
         <module>Sqlit-Lib</module>
         <module>Common</module>
+        <module>ExternalPluginStubs</module>
         <module>Bukkit</module>
         <module>BungeeCore</module>
         <module>Velocity</module>
@@ -90,7 +91,7 @@
                 <executions>
                     <execution>
                         <id>copy-artifacts-to-dist</id>
-                        <phase>package</phase>
+                        <phase>install</phase>
                         <goals><goal>copy</goal></goals>
                         <configuration>
                             <artifactItems>

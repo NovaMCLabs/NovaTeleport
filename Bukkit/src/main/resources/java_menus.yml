@@ -1,0 +1,109 @@
+# Java 版 GUI 菜单配置
+# All Java GUI menus are configurable here.
+
+menus:
+  main:
+    size: 27
+    title: "{lang:menu.main.title}"
+    items:
+      homes:
+        slot: 10
+        item: "RED_BED"
+        name: "&a{lang:menu.main.homes}"
+        action: "open_homes"
+      warps:
+        slot: 12
+        item: "ENDER_EYE"
+        name: "&b{lang:menu.main.warps}"
+        action: "open_warps"
+      rtp:
+        slot: 14
+        item: "ENDER_PEARL"
+        name: "&d{lang:menu.main.rtp}"
+        action: "open_rtp"
+      back:
+        slot: 16
+        item: "COMPASS"
+        name: "&e{lang:menu.main.back}"
+        action: "do_back"
+
+  homes:
+    size: 27
+    title: "{lang:menu.homes.title}"
+    template:
+      item: "ENDER_PEARL"
+      name: "{lang:display.home.item}"
+      lore: []
+      action: "home"
+
+  warps:
+    size: 27
+    title: "{lang:menu.warps.title}"
+    template:
+      item: "ENDER_EYE"
+      name: "{lang:display.warp.item}"
+      lore: []
+      action: "warp"
+
+  rtp:
+    size: 27
+    title: "{lang:menu.rtp.title}"
+    items:
+      decrease:
+        slot: 11
+        item: "REDSTONE"
+        name: "&c{lang:menu.rtp.decrease}"
+        action: "rtp_decrease"
+      current:
+        slot: 13
+        item: "COMPASS"
+        name: "&e{lang:menu.rtp.current}"
+        action: "rtp_current"
+      increase:
+        slot: 15
+        item: "SLIME_BALL"
+        name: "&a{lang:menu.rtp.increase}"
+        action: "rtp_increase"
+      start:
+        slot: 22
+        item: "ENDER_PEARL"
+        name: "&d{lang:menu.rtp.start}"
+        action: "rtp_start"
+
+  steles:
+    size: 54
+    title: "{lang:stele.menu}"
+    template:
+      item: "LODESTONE"
+      name: "&a{name}"
+      lore:
+        - "&7Click to travel"
+      action: "stele_travel"
+
+  toll_warps:
+    size: 54
+    title: "&6Toll Warps"
+    template:
+      item: "ENDER_PEARL"
+      name: "&b{name}"
+      lore:
+        - "&7Owner: &e{owner}"
+        - "&7Price: &a{price}"
+        - "&7Location: &f{world} {x}, {y}, {z}"
+        - "&7Uses: &6{usage}"
+        - ""
+        - "&eClick to teleport"
+      action: "tollwarp_tp"
+
+  teleport_log:
+    size: 54
+    title: "&6Teleport Logs: &e{player}"
+    template:
+      item: "PAPER"
+      name: "&e{type} &7- &f{time}"
+      lore:
+        - "&7From: &f{from_world} {from_x}, {from_y}, {from_z}"
+        - "&7To: &f{to_world} {to_x}, {to_y}, {to_z}"
+        - ""
+        - "&eClick to rewind player to the start"
+      action: "tplog_rewind"
