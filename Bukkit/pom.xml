@@ -110,9 +110,9 @@
 
         <!-- BetterTeams -->
         <dependency>
-            <groupId>com.github.Silverwolfg11</groupId>
+            <groupId>com.github.booksaw</groupId>
             <artifactId>BetterTeams</artifactId>
-            <version>5.1.4</version>
+            <version>4.15.2</version>
             <scope>provided</scope>
         </dependency>
 
