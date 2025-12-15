@@ -7,6 +7,10 @@ command.reload.success: "§aConfig reloaded!"
 teleport.cancelled.title: "§cTeleport cancelled!"
 teleport.completed: "§aTeleport complete!"
 teleport.actionbar.countdown: "§eTeleporting §7| §fRemaining §a{seconds}§f s"
+teleport.title.countdown: "§b§lTeleporting..."
+teleport.subtitle.countdown: "§e{seconds}§f s"
+
+anchor.missing: "§cSpatial anchor missing at destination."
 
 debug.enabled: "Debug enabled"
 debug.delay: "Teleport delay: {seconds}s"
