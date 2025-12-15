@@ -9,11 +9,11 @@ import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
-import net.md_5.bungee.api.ChatMessageType;
-import net.md_5.bungee.api.chat.TextComponent;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 public class TeleportUtil {
     public static class PostEffectConfig {
@@ -57,7 +57,16 @@ public class TeleportUtil {
     public static BukkitTask delayedTeleportWithAnimation(StarTeleport plugin, Player player, Location target, int delaySeconds, String type, Runnable onComplete) {
         final Location from = player.getLocation().clone();
 
+        if (delaySeconds > 0 && plugin.getConfig().getBoolean("performance.preload_target_chunk", true)) {
+            preloadTargetChunk(plugin, target);
+        }
+
         if (delaySeconds <= 0) {
+            if (SpatialAnchorUtil.isRequired(plugin, type) && !SpatialAnchorUtil.hasAnchor(plugin, target)) {
+                player.sendMessage(plugin.getLang().t("anchor.missing"));
+                return null;
+            }
+
             if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPre(player, target);
             playPrepare(plugin, player, target);
             if (!com.novamclabs.util.RegionGuardUtil.canEnter(player, target)) {
@@ -84,9 +93,8 @@ public class TeleportUtil {
                     cancel();
                     return;
                 }
-                // 倒计时行动条
-                String ab = plugin.getLang().tr("teleport.actionbar.countdown", "seconds", remaining);
-                player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(ab));
+
+                DisplayUtil.sendCountdown(plugin, player, remaining);
 
                 if (animation) {
                     playDuring(plugin, player, angle, delaySeconds, remaining);
@@ -95,6 +103,12 @@ public class TeleportUtil {
 
                 if (remaining <= 0) {
                     cancel();
+
+                    if (SpatialAnchorUtil.isRequired(plugin, type) && !SpatialAnchorUtil.hasAnchor(plugin, target)) {
+                        player.sendMessage(plugin.getLang().t("anchor.missing"));
+                        return;
+                    }
+
                     if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPre(player, target);
                     if (animation) playInstant(plugin, player);
                     if (animation) playPrepare(plugin, player, target);
@@ -124,6 +138,51 @@ public class TeleportUtil {
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    private static void preloadTargetChunk(StarTeleport plugin, Location target) {
+        if (target == null || target.getWorld() == null) return;
+
+        World w = target.getWorld();
+        int cx = target.getBlockX() >> 4;
+        int cz = target.getBlockZ() >> 4;
+
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            // Paper provides getChunkAtAsync(...). Use reflection to keep Spigot compatibility.
+            try {
+                Method async = null;
+                for (Method m : w.getClass().getMethods()) {
+                    if (!m.getName().equals("getChunkAtAsync")) continue;
+                    Class<?>[] p = m.getParameterTypes();
+                    if (p.length >= 2 && p[0] == int.class && p[1] == int.class) {
+                        async = m;
+                        break;
+                    }
+                }
+                if (async != null) {
+                    Object future;
+                    if (async.getParameterCount() == 2) {
+                        future = async.invoke(w, cx, cz);
+                    } else if (async.getParameterCount() == 3) {
+                        future = async.invoke(w, cx, cz, true);
+                    } else if (async.getParameterCount() == 4) {
+                        future = async.invoke(w, cx, cz, true, true);
+                    } else {
+                        future = null;
+                    }
+                    if (future instanceof CompletableFuture<?>) {
+                        ((CompletableFuture<?>) future).exceptionally(ex -> null);
+                        return;
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+
+            try {
+                w.getChunkAt(cx, cz);
+            } catch (Throwable ignored) {
+            }
+        });
     }
 
     // 若开启配置且玩家在船上，则携带船与乘客一起传送

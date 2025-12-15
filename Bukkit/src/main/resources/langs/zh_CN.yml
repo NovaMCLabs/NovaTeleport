@@ -7,6 +7,10 @@ command.reload.success: "§a配置已成功重载！"
 teleport.cancelled.title: "§c传送取消!"
 teleport.completed: "§a传送完成！"
 teleport.actionbar.countdown: "§e启明传送中 §7| §f剩余 §a{seconds}§f 秒"
+teleport.title.countdown: "§b§l传送中..."
+teleport.subtitle.countdown: "§e{seconds}§f 秒"
+
+anchor.missing: "§c目标地点缺少空间锚点结构，无法传送。"
 
 debug.enabled: "调试模式已启用 | Debug enabled"
 debug.delay: "传送延迟设置为: {seconds}秒"

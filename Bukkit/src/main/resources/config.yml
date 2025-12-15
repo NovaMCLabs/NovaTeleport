@@ -40,6 +40,37 @@ auto_world_teleport:
 commands:
   teleport_delay_seconds: 3
 
+# 显示设置 | Display settings
+# 建议默认使用 TITLE（Java/基岩版都原生支持）
+display_settings:
+  # CHAT | ACTION_BAR | TITLE
+  default_mode: TITLE
+  title_options:
+    fade_in: 10
+    stay: 40
+    fade_out: 10
+  # 倒计时类 Title 建议禁用淡入淡出（每秒刷新更平滑）
+  countdown_title_options:
+    fade_in: 0
+    stay: 25
+    fade_out: 0
+
+# 性能优化 | Performance
+performance:
+  # 在传送倒计时期间预加载目标区块（利用等待时间降低落地卡顿）
+  preload_target_chunk: true
+
+# 空间锚点 | Spatial anchors
+# 若启用，则指定类型的传送必须在目标附近存在锚点结构
+spatial_anchors:
+  enabled: false
+  # 需要锚点的传送类型（TeleportUtil 的 type 参数）
+  required_types: [guild, towny]
+  # 结构以落点脚下方块为中心（y-1），检查 3x3
+  center_block: OBSIDIAN
+  edge_block: END_ROD
+  corner_block: GOLD_BLOCK
+
 # 回城设置（本服或跨服）| City/hub settings
 city:
   mode: local # local | proxy
