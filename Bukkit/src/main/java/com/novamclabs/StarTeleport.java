@@ -12,6 +12,7 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.scheduler.BukkitTask;
 import java.util.Map;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -40,12 +41,12 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private com.novamclabs.towny.TownyTeleportManager townyTeleportManager;
     private com.novamclabs.log.TeleportLogManager teleportLogManager;
 
-    // 使用 ConcurrentHashMap 来避免并发问题 | Use concurrent map to avoid concurrency issues
-    private final Map<Player, BukkitTask> taskMap = new ConcurrentHashMap<>();
+    // 使用 UUID 作为 key，避免 Player 对象引用导致的内存泄漏 | Use UUID keys to avoid Player reference leaks
+    private final Map<UUID, BukkitTask> taskMap = new ConcurrentHashMap<>();
     // 记录玩家是否可以触发传送（用于控制重复触发）
-    private final Map<Player, Boolean> canTriggerMap = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> canTriggerMap = new ConcurrentHashMap<>();
     // 记录玩家开始传送时的位置
-    private final Map<Player, org.bukkit.Location> originalLocations = new ConcurrentHashMap<>();
+    private final Map<UUID, org.bukkit.Location> originalLocations = new ConcurrentHashMap<>();
     
     // 配置键常量
     private static final String CONFIG_DEBUG = "debug";
@@ -248,14 +249,19 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
+        if (event.getTo() == null) {
+            return;
+        }
+
         Player player = event.getPlayer();
-        
+        UUID uuid = player.getUniqueId();
+
         if (!player.hasPermission("novateleport.pass")) {
             return;
         }
 
         // 检查是否在传送倒计时中
-        if (taskMap.containsKey(player)) {
+        if (taskMap.containsKey(uuid)) {
             // 只有当玩家移动了指定格数时才取消传送
             if (hasMovedFullBlock(event)) {
                 cancelExistingTask(player, true);
@@ -278,44 +284,60 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
 
         World currentWorld = player.getWorld();
         TeleportRule teleportRule = findTeleportRule(currentWorld.getName());
-        
+
         if (teleportRule == null) {
             return;
         }
 
         handleTeleport(player, teleportRule, event);
     }
+
+    @EventHandler
+    public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+        cancelExistingTask(player, false);
+        canTriggerMap.remove(player.getUniqueId());
+        originalLocations.remove(player.getUniqueId());
+    }
     
     /**
      * 检查玩家是否移动了指定格数（2格）
      */
     private boolean hasMovedFullBlock(PlayerMoveEvent event) {
+        if (event.getTo() == null) {
+            return false;
+        }
+
         Player player = event.getPlayer();
-        org.bukkit.Location originalLoc = originalLocations.get(player);
-        
+        UUID uuid = player.getUniqueId();
+        org.bukkit.Location originalLoc = originalLocations.get(uuid);
+
         // 如果没有原始位置记录，说明是新的传送，记录当前位置
         if (originalLoc == null) {
             originalLoc = event.getFrom().clone(); // 克隆位置以避免引用问题
-            originalLocations.put(player, originalLoc);
+            originalLocations.put(uuid, originalLoc);
             return false;
         }
-        
+
         // 使用精确坐标计算移动距离
         double deltaX = Math.abs(event.getTo().getX() - originalLoc.getX());
         double deltaZ = Math.abs(event.getTo().getZ() - originalLoc.getZ());
-        
+
         if (debug) {
             getLogger().log(Level.INFO, lang.tr("debug.move_distance", "player", player.getName(), "dx", String.format("%.2f", deltaX), "dz", String.format("%.2f", deltaZ)));
         }
-        
+
         // 如果任一方向移动超过2格，则取消传送
         return deltaX >= 2.0 || deltaZ >= 2.0;
     }
-    
+
     /**
      * 检查玩家位置是否发生变化（包括微小移动）
      */
     private boolean hasPositionChanged(PlayerMoveEvent event) {
+        if (event.getTo() == null) {
+            return false;
+        }
         return event.getFrom().getBlockX() != event.getTo().getBlockX() ||
                event.getFrom().getBlockY() != event.getTo().getBlockY() ||
                event.getFrom().getBlockZ() != event.getTo().getBlockZ();
@@ -326,7 +348,8 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
      * @param showTitle 是否显示取消传送的Title
      */
     private void cancelExistingTask(Player player, boolean showTitle) {
-        BukkitTask existingTask = taskMap.remove(player);
+        UUID uuid = player.getUniqueId();
+        BukkitTask existingTask = taskMap.remove(uuid);
         if (existingTask != null) {
             existingTask.cancel();
             if (showTitle) {
@@ -334,7 +357,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             }
         }
         // 清除原始位置记录
-        originalLocations.remove(player);
+        originalLocations.remove(uuid);
     }
     
     /**
@@ -367,37 +390,42 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
      * 处理传送逻辑
      */
     private void handleTeleport(Player player, TeleportRule rule, PlayerMoveEvent event) {
+        if (event.getTo() == null) {
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
         int currentY = event.getTo().getBlockY();
         int fromY = event.getFrom().getBlockY();
         boolean isNegativeThreshold = rule.threshold < 0;
-        
+
         // 检查是否在阈值位置移动
-        if ((isNegativeThreshold && currentY <= rule.threshold) || 
+        if ((isNegativeThreshold && currentY <= rule.threshold) ||
             (!isNegativeThreshold && currentY >= rule.threshold)) {
-            
+
             // 如果在阈值位置移动，取消传送但不显示Title
             if (fromY == currentY) {
                 cancelExistingTask(player, false);
                 return;
             }
-            
+
             // 检查是否可以触发传送
-            Boolean canTrigger = canTriggerMap.get(player);
+            Boolean canTrigger = canTriggerMap.get(uuid);
             if (canTrigger == null || canTrigger) {
                 // 首次触发或允许触发
                 boolean started = startTeleport(player, rule);
                 if (started) {
-                    canTriggerMap.put(player, false); // 防止重复触发
+                    canTriggerMap.put(uuid, false); // 防止重复触发
                 }
             }
         } else {
             // 检查是否穿过阈值线（从一侧移动到另一侧）
-            boolean crossedThresholdLine = isNegativeThreshold ? 
+            boolean crossedThresholdLine = isNegativeThreshold ?
                 (fromY <= rule.threshold && currentY > rule.threshold) :  // 负数阈值：从下往上穿过
                 (fromY >= rule.threshold && currentY < rule.threshold);   // 正数阈值：从上往下穿过
-                
+
             if (crossedThresholdLine) {
-                canTriggerMap.put(player, true); // 允许再次触发
+                canTriggerMap.put(uuid, true); // 允许再次触发
                 if (debug) {
                     getLogger().log(Level.INFO, lang.tr("debug.cross_threshold", "player", player.getName()));
                 }
@@ -424,7 +452,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         }
 
         // 记录玩家开始传送时的位置
-        originalLocations.put(player, player.getLocation().clone());
+        originalLocations.put(player.getUniqueId(), player.getLocation().clone());
         // 记录/back 位置
         try {
             if (this.dataStore != null) {
@@ -465,35 +493,33 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
      * 调度传送任务
      */
     private void scheduleTeleport(Player player, World targetWorld) {
+        UUID uuid = player.getUniqueId();
         org.bukkit.Location target = targetWorld.getSpawnLocation();
         BukkitTask task = com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(this, player, target, teleportDelay, "auto_world_teleport", () -> {
             // 传送完成后的回调
-            BukkitTask t = taskMap.remove(player);
+            BukkitTask t = taskMap.remove(uuid);
             if (t != null) t.cancel();
-            originalLocations.remove(player);
+            originalLocations.remove(uuid);
             player.sendMessage(lang.t("teleport.completed"));
         });
         if (task != null) {
-            taskMap.put(player, task);
-        } else {
-            // 无延迟直接传送
-            player.teleport(target);
-            player.sendMessage(lang.t("teleport.completed"));
+            taskMap.put(uuid, task);
         }
     }
-    
+
     /**
-     * 执行传送
+     * 执行传送（保留旧接口，当前主要使用 TeleportUtil）
      */
     private void executeTeleport(Player player, World targetWorld) {
-        BukkitTask task = taskMap.remove(player);
+        UUID uuid = player.getUniqueId();
+        BukkitTask task = taskMap.remove(uuid);
         if (task != null) {
             task.cancel();
         }
-        
+
         // 清除原始位置记录
-        originalLocations.remove(player);
-        
+        originalLocations.remove(uuid);
+
         player.teleport(targetWorld.getSpawnLocation());
         player.sendMessage(lang.t("teleport.completed"));
     }
