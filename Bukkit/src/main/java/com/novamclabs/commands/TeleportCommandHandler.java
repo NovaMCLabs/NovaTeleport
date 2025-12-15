@@ -11,6 +11,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -616,6 +617,23 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp",
                     () -> p.sendMessage(plugin.getLang().t("rtp.done")));
             }
+        }
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent e) {
+        UUID uuid = e.getPlayer().getUniqueId();
+        rtpRadiusChoices.remove(uuid);
+
+        // 清理 TPA 请求，避免离线后残留 | cleanup requests on quit
+        TpaRequest outgoingReq = outgoing.remove(uuid);
+        if (outgoingReq != null) {
+            incoming.remove(outgoingReq.target);
+        }
+
+        TpaRequest incomingReq = incoming.remove(uuid);
+        if (incomingReq != null) {
+            outgoing.remove(incomingReq.requester);
         }
     }
 

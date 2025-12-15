@@ -500,6 +500,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             BukkitTask t = taskMap.remove(uuid);
             if (t != null) t.cancel();
             originalLocations.remove(uuid);
+            canTriggerMap.remove(uuid);
             player.sendMessage(lang.t("teleport.completed"));
         });
         if (task != null) {
@@ -519,6 +520,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
 
         // 清除原始位置记录
         originalLocations.remove(uuid);
+        canTriggerMap.remove(uuid);
 
         player.teleport(targetWorld.getSpawnLocation());
         player.sendMessage(lang.t("teleport.completed"));

@@ -4,8 +4,8 @@ import com.novamclabs.StarTeleport;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 跨服服务整合（Redis 可选，用于 TPA/待处理任务广播）
@@ -48,34 +48,61 @@ public class CrossServerService {
             final String channel = plugin.getConfig().getString("network.redis.channel", "novateleport");
             Class<?> jedisClz = Class.forName("redis.clients.jedis.Jedis");
             Class<?> subscriberClz = Class.forName("redis.clients.jedis.JedisPubSub");
+
+            if (!subscriberClz.isInterface()) {
+                plugin.getLogger().warning("Redis subscribe disabled: JedisPubSub is not an interface; current implementation cannot create a subscriber without a compiled Jedis dependency.");
+                return;
+            }
+
             Object sub = java.lang.reflect.Proxy.newProxyInstance(subscriberClz.getClassLoader(), new Class[]{subscriberClz}, (proxy, method, args) -> {
-                if (method.getName().equals("onMessage") && args.length == 2) {
-                    String msg = (String) args[1];
+                if (method.getName().equals("onMessage") && args != null && args.length == 2) {
+                    String msg = String.valueOf(args[1]);
                     handleMessage(msg);
                 }
                 return null;
             });
+
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                Object jedis = null;
                 try {
-                    Object jedis = jedisClz.cast(jedisPool.getClass().getMethod("getResource").invoke(jedisPool));
-                    jedisClz.getMethod("subscribe", subscriberClz, String[].class).invoke(jedis, sub, new Object[]{new String[]{channel}});
-                } catch (Throwable ignored) {}
+                    jedis = jedisClz.cast(jedisPool.getClass().getMethod("getResource").invoke(jedisPool));
+                    for (java.lang.reflect.Method m : jedisClz.getMethods()) {
+                        if (!m.getName().equals("subscribe")) continue;
+                        if (m.getParameterCount() != 2) continue;
+                        m.invoke(jedis, sub, new Object[]{new String[]{channel}});
+                        break;
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    closeQuietly(jedis);
+                }
             });
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
     }
 
     private void handleMessage(String json) {
-        // 兼容简单协议：type:tpa,target:<name>,requester:<name>,here:true/false
+        // Simple protocol: {"type":"tpa","target":"<name>","requester":"<name>","here":true/false,"server":"<name>"}
         try {
+            if (json == null || json.isBlank()) return;
             if (!json.contains("\"type\":\"tpa\"")) return;
-            String target = extract(json, "target");
-            String requester = extract(json, "requester");
-            boolean here = Boolean.parseBoolean(extract(json, "here"));
+
+            String server = extractString(json, "server");
+            if (server != null && !server.isBlank() && serverName.equalsIgnoreCase(server)) {
+                return;
+            }
+
+            String target = extractString(json, "target");
+            if (target == null || target.isBlank()) return;
+
+            String requester = extractString(json, "requester");
+            boolean here = extractBoolean(json, "here", false);
+
             Player tpTarget = Bukkit.getPlayerExact(target);
             if (tpTarget == null) return;
+
             // 重用本地 TPA 展示逻辑
             Bukkit.getScheduler().runTask(plugin, () -> {
-                com.novamclabs.util.BedrockUtil.isBedrock(tpTarget);
                 boolean sent = com.novamclabs.util.BedrockFormsUtil.showTpaRequestForm(plugin, tpTarget, requester, here);
                 if (!sent) {
                     net.md_5.bungee.api.chat.TextComponent yes = new net.md_5.bungee.api.chat.TextComponent(plugin.getLang().t("tpa.click.accept"));
@@ -86,32 +113,54 @@ public class CrossServerService {
                     no.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/tpdeny"));
                     net.md_5.bungee.api.chat.TextComponent spacer = new net.md_5.bungee.api.chat.TextComponent(" ");
                     tpTarget.spigot().sendMessage(yes, spacer, no);
-                    tpTarget.sendMessage(plugin.getLang().tr(here?"tpa.prompt.to_here":"tpa.prompt.to_you", "requester", requester));
+                    tpTarget.sendMessage(plugin.getLang().tr(here ? "tpa.prompt.to_here" : "tpa.prompt.to_you", "requester", requester));
                 }
             });
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
     }
 
-    private String extract(String json, String key) {
-        int i = json.indexOf('"' + key + '"');
-        if (i < 0) return "";
-        int colon = json.indexOf(':', i);
-        int start = json.indexOf('"', colon + 1) + 1;
-        int end = json.indexOf('"', start);
-        if (start < 1 || end < 0) return "";
-        return json.substring(start, end);
+    private static String extractString(String json, String key) {
+        Pattern p = Pattern.compile("\\\"" + Pattern.quote(key) + "\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"");
+        Matcher m = p.matcher(json);
+        return m.find() ? m.group(1) : "";
+    }
+
+    private static boolean extractBoolean(String json, String key, boolean def) {
+        Pattern p = Pattern.compile("\\\"" + Pattern.quote(key) + "\\\"\\s*:\\s*(true|false)");
+        Matcher m = p.matcher(json);
+        if (!m.find()) return def;
+        return Boolean.parseBoolean(m.group(1));
+    }
+
+    private static void closeQuietly(Object obj) {
+        if (obj == null) return;
+        try {
+            if (obj instanceof AutoCloseable) {
+                ((AutoCloseable) obj).close();
+                return;
+            }
+            java.lang.reflect.Method close = obj.getClass().getMethod("close");
+            close.invoke(obj);
+        } catch (Throwable ignored) {
+        }
     }
 
     public void publishTpaRequest(String targetName, String requesterName, boolean here) {
         if (!redisEnabled || jedisPool == null) return;
         String channel = plugin.getConfig().getString("network.redis.channel", "novateleport");
         String payload = String.format("{\"type\":\"tpa\",\"target\":\"%s\",\"requester\":\"%s\",\"here\":%s,\"server\":\"%s\"}",
-                targetName, requesterName, here?"true":"false", serverName);
+                targetName, requesterName, here ? "true" : "false", serverName);
+
+        Object jedis = null;
         try {
             Class<?> jedisClz = Class.forName("redis.clients.jedis.Jedis");
-            Object jedis = jedisClz.cast(jedisPool.getClass().getMethod("getResource").invoke(jedisPool));
+            jedis = jedisClz.cast(jedisPool.getClass().getMethod("getResource").invoke(jedisPool));
             jedisClz.getMethod("publish", String.class, String.class).invoke(jedis, channel, payload);
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        } finally {
+            closeQuietly(jedis);
+        }
     }
 
     // 监听玩家加入以处理待办 | handle pending on join (reserved for future)
