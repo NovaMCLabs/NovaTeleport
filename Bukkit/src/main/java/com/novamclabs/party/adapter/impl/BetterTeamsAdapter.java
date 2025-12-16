@@ -1,7 +1,7 @@
 package com.novamclabs.party.adapter.impl;
 
+import com.booksaw.betterTeams.PlayerRank;
 import com.booksaw.betterTeams.Team;
-import com.booksaw.betterTeams.TeamManager;
 import com.booksaw.betterTeams.TeamPlayer;
 import com.novamclabs.party.adapter.PartyAdapter;
 import org.bukkit.Bukkit;
@@ -9,6 +9,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -26,8 +27,7 @@ public class BetterTeamsAdapter implements PartyAdapter {
     @Override 
     public boolean isPresent() { 
         try {
-            return Bukkit.getPluginManager().getPlugin("BetterTeams") != null
-                && TeamManager.class != null;
+            return Bukkit.getPluginManager().getPlugin("BetterTeams") != null;
         } catch (Throwable t) {
             return false;
         }
@@ -38,21 +38,20 @@ public class BetterTeamsAdapter implements PartyAdapter {
         if (!isPresent()) return null;
         
         try {
-            Team team = TeamManager.getTeam(player);
+            Team team = Team.getTeam(player);
             if (team == null) return null;
-            
-            // 获取队伍成员
+
             Set<UUID> members = new HashSet<>();
-            for (TeamPlayer tp : team.getMembers()) {
-                members.add(tp.getUUID());
+            for (TeamPlayer tp : team.getMembers().get()) {
+                members.add(tp.getPlayerUUID());
             }
-            
-            // 获取队长
-            UUID leader = team.getOwner();
+
+            List<TeamPlayer> owners = team.getRank(PlayerRank.OWNER);
+            UUID leader = owners.isEmpty() ? null : owners.get(0).getPlayerUUID();
             if (leader == null) {
                 leader = player.getUniqueId();
             }
-            
+
             return new PartyInfo(leader, members);
         } catch (Throwable t) {
             return null;
