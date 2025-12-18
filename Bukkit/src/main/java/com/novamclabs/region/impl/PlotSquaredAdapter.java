@@ -52,10 +52,8 @@ public class PlotSquaredAdapter implements RegionAdapter {
                 return true;
             }
             
-            // 检查是否允许访问
-            // Check if entry is allowed
-            return plot.getFlag(com.plotsquared.core.plot.flag.implementations.DenyTeleportFlag.class);
-            
+            return com.plotsquared.core.plot.flag.implementations.DenyTeleportFlag.allowsTeleport(plotPlayer, plot);
+
         } catch (Throwable t) {
             return true;
         }

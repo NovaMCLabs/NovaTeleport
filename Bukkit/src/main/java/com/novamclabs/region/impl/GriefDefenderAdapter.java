@@ -2,7 +2,6 @@ package com.novamclabs.region.impl;
 
 import com.griefdefender.api.Core;
 import com.griefdefender.api.GriefDefender;
-import com.griefdefender.api.User;
 import com.griefdefender.api.claim.Claim;
 import com.griefdefender.api.claim.TrustTypes;
 import com.novamclabs.region.RegionAdapter;
@@ -37,19 +36,13 @@ public class GriefDefenderAdapter implements RegionAdapter {
         
         try {
             Core core = GriefDefender.getCore();
-            Claim claim = core.getClaimAt(convertLocation(dest));
-            
+            Claim claim = core.getClaimAt(dest.getWorld().getUID(), dest.getBlockX(), dest.getBlockY(), dest.getBlockZ());
+
             if (claim == null || claim.isWilderness()) {
-                // 荒野区域，允许
-                // Wilderness area, allow
                 return true;
             }
-            
-            User user = core.getUser(p.getUniqueId());
-            
-            // 检查是否有信任权限
-            // Check if player has trust
-            if (claim.isUserTrusted(user, TrustTypes.ACCESSOR)) {
+
+            if (claim.isUserTrusted(p.getUniqueId(), TrustTypes.ACCESSOR)) {
                 return true;
             }
             
@@ -59,19 +52,10 @@ public class GriefDefenderAdapter implements RegionAdapter {
                 return true;
             }
             
-            return true; // GriefDefender 默认允许进入，除非明确禁止
-            
+            return true;
+
         } catch (Throwable t) {
             return true;
         }
-    }
-    
-    private com.griefdefender.api.claim.Location convertLocation(Location bukkit) {
-        return new com.griefdefender.api.claim.Location(
-            bukkit.getWorld().getUID(),
-            bukkit.getBlockX(),
-            bukkit.getBlockY(),
-            bukkit.getBlockZ()
-        );
     }
 }

@@ -30,7 +30,7 @@ public class GuildsPluginAdapter implements GuildAdapter {
     public boolean isPresent() {
         try {
             if (Bukkit.getPluginManager().getPlugin("Guilds") != null && api == null) {
-                api = GuildsAPI.getApi();
+                api = Guilds.getApi();
             }
             return api != null;
         } catch (Throwable t) {
@@ -106,7 +106,14 @@ public class GuildsPluginAdapter implements GuildAdapter {
             Guild guild = api.getGuild(UUID.fromString(guildId));
             if (guild == null) return false;
             
-            guild.setHome(location);
+            guild.setHome(new me.glaremasters.guilds.guild.GuildHome(
+                location.getWorld().getName(),
+                location.getX(),
+                location.getY(),
+                location.getZ(),
+                location.getYaw(),
+                location.getPitch()
+            ));
             return true;
         } catch (Throwable t) {
             return false;
@@ -123,7 +130,12 @@ public class GuildsPluginAdapter implements GuildAdapter {
             GuildMember member = guild.getMember(player.getUniqueId());
             if (member == null) return false;
             
-            return member.getRole().isOfficer() || guild.getGuildMaster().getUuid().equals(player.getUniqueId());
+            if (guild.isMaster(player)) {
+                return true;
+            }
+
+            me.glaremasters.guilds.guild.GuildRole role = member.getRole();
+            return role != null && (role.isChangeHome() || role.isPromote() || role.isKick());
         } catch (Throwable t) {
             return false;
         }

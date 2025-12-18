@@ -5,7 +5,7 @@ import com.tcoded.folialib.FoliaLib;
 import com.tcoded.folialib.wrapper.task.WrappedTask;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
-import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -17,18 +17,18 @@ import java.util.concurrent.TimeUnit;
 public class FoliaScheduler implements SchedulerWrapper {
     private final FoliaLib foliaLib;
     
-    public FoliaScheduler(Plugin plugin) {
+    public FoliaScheduler(JavaPlugin plugin) {
         this.foliaLib = new FoliaLib(plugin);
     }
     
     @Override
     public void runNextTick(Runnable task) {
-        foliaLib.getScheduler().runNextTick(task);
+        foliaLib.getScheduler().runNextTick(wrappedTask -> task.run());
     }
     
     @Override
     public void runAsync(Runnable task) {
-        foliaLib.getScheduler().runAsync(task);
+        foliaLib.getScheduler().runAsync(wrappedTask -> task.run());
     }
     
     @Override
@@ -58,7 +58,7 @@ public class FoliaScheduler implements SchedulerWrapper {
     @Override
     public void runAtEntity(Object entity, Runnable task) {
         if (entity instanceof Entity) {
-            foliaLib.getScheduler().runAtEntity((Entity) entity, task);
+            foliaLib.getScheduler().runAtEntity((Entity) entity, wrappedTask -> task.run());
         } else {
             runNextTick(task);
         }
@@ -68,7 +68,7 @@ public class FoliaScheduler implements SchedulerWrapper {
     public void runAtLocation(Object world, int x, int y, int z, Runnable task) {
         if (world instanceof org.bukkit.World) {
             Location loc = new Location((org.bukkit.World) world, x, y, z);
-            foliaLib.getScheduler().runAtLocation(loc, task);
+            foliaLib.getScheduler().runAtLocation(loc, wrappedTask -> task.run());
         } else {
             runNextTick(task);
         }

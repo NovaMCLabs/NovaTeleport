@@ -120,8 +120,8 @@ public class PartyCommand implements CommandExecutor {
                     PartyAdapter active = externalAdapters != null ? externalAdapters.getActive() : null;
                     PartyAdapter.PartyInfo info = active != null ? active.getParty(p) : null;
                     if (info != null) {
-                        isLeader = p.getUniqueId().equals(info.leader());
-                        targetMembers.addAll(info.members());
+                        isLeader = p.getUniqueId().equals(info.leader);
+                        targetMembers.addAll(info.members);
                     }
                 }
 
