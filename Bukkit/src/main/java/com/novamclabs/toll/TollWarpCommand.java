@@ -71,6 +71,10 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
 
         switch (subCmd) {
             case "create" -> {
+                if (!player.hasPermission("novateleport.toll.create")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 if (args.length < 2) {
                     player.sendMessage("§cUsage: /tollwarp create <name> [price]");
                     return true;
@@ -88,6 +92,10 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
                 return true;
             }
             case "delete", "remove" -> {
+                if (!player.hasPermission("novateleport.toll.delete")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 if (args.length < 2) {
                     player.sendMessage("§cUsage: /tollwarp delete <name>");
                     return true;
@@ -96,6 +104,10 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
                 return true;
             }
             case "setprice" -> {
+                if (!player.hasPermission("novateleport.toll.create")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 if (args.length < 3) {
                     player.sendMessage("§cUsage: /tollwarp setprice <name> <price>");
                     return true;
@@ -109,14 +121,26 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
                 return true;
             }
             case "list" -> {
+                if (!player.hasPermission("novateleport.toll.use")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 openMenu(player, false);
                 return true;
             }
             case "mywarps" -> {
+                if (!player.hasPermission("novateleport.toll.use")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 openMenu(player, true);
                 return true;
             }
             case "tp", "teleport" -> {
+                if (!player.hasPermission("novateleport.toll.use")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 if (args.length < 2) {
                     player.sendMessage("§cUsage: /tollwarp tp <name>");
                     return true;
@@ -126,6 +150,10 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
             }
             default -> {
                 // shorthand: /tollwarp <name>
+                if (!player.hasPermission("novateleport.toll.use")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 manager.teleportToWarp(player, args[0]);
                 return true;
             }

@@ -1,3 +1,5 @@
 name: NovaTeleportProxy
 main: com.novamclabs.proxy.NovaTeleportBungee
 version: 1.0.0
+author: NovaMCLabs
+description: NovaTeleport 代理侧占位插件（跨服切换由子服通过 BungeeCord 插件消息通道完成）

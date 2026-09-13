@@ -12,7 +12,6 @@ import org.bukkit.entity.Player;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * FactionsUUID 适配器（使用编译期依赖）
@@ -67,9 +66,23 @@ public class FactionsUUIDAdapter implements GuildAdapter {
         try {
             Faction faction = Factions.getInstance().getFactionById(guildId);
             if (faction == null) return new ArrayList<>();
-            return faction.getFPlayers().stream()
-                .map(fp -> UUID.fromString(fp.getId()))
-                .collect(Collectors.toList());
+
+            // SaberFactions 的 getFPlayers() 返回 Set，上游 FactionsUUID 返回 List —— 两个分支
+            // 的 plugin.yml 都叫 "Factions"，无法同时编译匹配。按 Collection 反射取值，
+            // 避免在其中一个分支上抛 NoSuchMethodError 导致成员列表恒为空。
+            Object raw = faction.getClass().getMethod("getFPlayers").invoke(faction);
+            if (!(raw instanceof java.util.Collection<?> col)) return new ArrayList<>();
+
+            List<UUID> out = new ArrayList<>(col.size());
+            for (Object fp : col) {
+                try {
+                    Object id = fp.getClass().getMethod("getId").invoke(fp);
+                    if (id != null) out.add(UUID.fromString(id.toString()));
+                } catch (Throwable ignored) {
+                    // 单个成员取不到就跳过，不影响其余成员
+                }
+            }
+            return out;
         } catch (Throwable t) {
             return new ArrayList<>();
         }
@@ -116,7 +129,13 @@ public class FactionsUUIDAdapter implements GuildAdapter {
         try {
             FPlayer fp = FPlayers.getInstance().getByPlayer(player);
             if (fp == null || !fp.hasFaction()) return false;
-            return fp.getRole().isAtLeast(com.massivecraft.factions.struct.Role.COLEADER);
+
+            // 角色的枚举类型在两个分支里不同（SaberFactions: struct.Role，含 LEADER；
+            // 上游 FactionsUUID: perms.Role，LEADER 改名 ADMIN），按枚举名反射比较更稳。
+            Object role = fp.getClass().getMethod("getRole").invoke(fp);
+            if (!(role instanceof Enum<?> e)) return false;
+            String n = e.name();
+            return n.equals("LEADER") || n.equals("ADMIN") || n.equals("COLEADER");
         } catch (Throwable t) {
             return false;
         }

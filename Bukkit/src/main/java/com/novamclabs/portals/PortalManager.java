@@ -12,6 +12,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
@@ -20,9 +21,12 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PortalManager implements Listener {
     public static class PortalDef {
+        public final String key;
         public final String name;
         public final String frameBlockSpec; // 支持 ItemsAdder 自定义方块 ID | Support IA custom block id
         public final String activationSpec; // 支持 ItemsAdder/MMOItems 物品 | Support IA/MMOItems
@@ -31,21 +35,34 @@ public class PortalManager implements Listener {
         public final String x;
         public final String y;
         public final String z;
-        public PortalDef(String name, String frameBlockSpec, String activationSpec, Material portalBlock,
+        public PortalDef(String key, String name, String frameBlockSpec, String activationSpec, Material portalBlock,
                          String world, String x, String y, String z) {
+            this.key = key;
             this.name = name; this.frameBlockSpec = frameBlockSpec; this.activationSpec = activationSpec; this.portalBlock = portalBlock;
             this.world = world; this.x = x; this.y = y; this.z = z;
         }
     }
 
+    /** 同一玩家两次触发之间的最小间隔（毫秒），避免站在传送门里被反复传送 */
+    private static final long REUSE_COOLDOWN_MS = 3000L;
+
     private final StarTeleport plugin;
     private final Map<Location, PortalDef> activePortals = new HashMap<>();
+    private final Map<UUID, Long> lastTrigger = new ConcurrentHashMap<>();
     private Map<String, PortalDef> defs = new HashMap<>();
+    private File stateFile;
 
     public PortalManager(StarTeleport plugin) {
         this.plugin = plugin;
+        this.stateFile = new File(plugin.getDataFolder(), "data/portals_state.yml");
         Bukkit.getPluginManager().registerEvents(this, plugin);
+        reload();
+    }
+
+    /** 重新载入定义并恢复已激活的传送门方块 | reload definitions and restore activated portals */
+    public synchronized void reload() {
         loadDefinitions();
+        restoreActivePortals();
     }
 
     private void loadDefinitions() {
@@ -58,8 +75,11 @@ public class PortalManager implements Listener {
         }
         YamlConfiguration cfg = YamlConfiguration.loadConfiguration(out);
         ConfigurationSection sec = cfg.getConfigurationSection("portals");
-        if (sec == null) return;
         Map<String, PortalDef> map = new HashMap<>();
+        if (sec == null) {
+            this.defs = map;
+            return;
+        }
         for (String key : sec.getKeys(false)) {
             ConfigurationSection s = sec.getConfigurationSection(key);
             if (s == null) continue;
@@ -72,9 +92,45 @@ public class PortalManager implements Listener {
             String y = Objects.toString(s.get("destination.y", "SAME_AS_ENTRY"));
             String z = Objects.toString(s.get("destination.z", "SAME_AS_ENTRY"));
             if (portal == null) continue;
-            map.put(key, new PortalDef(name, frameSpec, actSpec, portal, world, x, y, z));
+            map.put(key, new PortalDef(key, name, frameSpec, actSpec, portal, world, x, y, z));
         }
         this.defs = map;
+    }
+
+    // ===== 传送门状态持久化 | persist activated portals =====
+
+    private void restoreActivePortals() {
+        activePortals.clear();
+        if (stateFile == null || !stateFile.exists()) return;
+        YamlConfiguration state = YamlConfiguration.loadConfiguration(stateFile);
+        for (String raw : state.getStringList("active")) {
+            String[] parts = raw.split(";");
+            if (parts.length != 5) continue;
+            PortalDef def = defs.get(parts[4]);
+            if (def == null) continue;
+            try {
+                org.bukkit.World w = Bukkit.getWorld(parts[0]);
+                if (w == null) continue;
+                Location loc = new Location(w, Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), Integer.parseInt(parts[3]));
+                activePortals.put(loc.getBlock().getLocation(), def);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+    }
+
+    private void saveActivePortals() {
+        YamlConfiguration state = new YamlConfiguration();
+        java.util.List<String> list = new java.util.ArrayList<>();
+        for (Map.Entry<Location, PortalDef> e : activePortals.entrySet()) {
+            Location l = e.getKey();
+            if (l.getWorld() == null) continue;
+            list.add(l.getWorld().getName() + ";" + l.getBlockX() + ";" + l.getBlockY() + ";" + l.getBlockZ() + ";" + e.getValue().key);
+        }
+        state.set("active", list);
+        try {
+            com.novamclabs.storage.DataStore.atomicSave(state, stateFile);
+        } catch (IOException ignored) {
+        }
     }
 
     @EventHandler
@@ -90,6 +146,7 @@ public class PortalManager implements Listener {
                 && com.novamclabs.util.ItemResolver.blockMatchesFrame(def.frameBlockSpec, e.getClickedBlock())) {
                 // 尝试检测垂直矩形框架并填充 | Try detect vertical rectangular frame and fill interior
                 if (tryBuildPortalRegion(e.getPlayer(), clicked, def)) {
+                    saveActivePortals();
                     e.getPlayer().sendMessage(plugin.getLang().tr("portal.activated", "name", def.name));
                 }
                 return;
@@ -124,18 +181,16 @@ public class PortalManager implements Listener {
         // 向正方向（z 或 x）
         while (isFrame(def, xConstant ? origin.getWorld().getBlockAt(fixed, start.getY(), v1 + 1)
                                       : origin.getWorld().getBlockAt(v1 + 1, start.getY(), fixed))) v1++;
-        // 采用外扩一圈后的边界作为矩形周长
         int minY = y0, maxY = y1, minV = Math.min(v0, v1), maxV = Math.max(v0, v1);
         if (maxY - minY < 2 || maxV - minV < 2) return false; // 至少 3x3 框架 | need at least 3x3
         // 校验外圈都是框架方块 | verify perimeter is frame
         for (int y = minY; y <= maxY; y++) {
             for (int v = minV; v <= maxV; v++) {
                 boolean edge = (y == minY || y == maxY || v == minV || v == maxV);
+                if (!edge) continue;
                 org.bukkit.block.Block b = xConstant ? origin.getWorld().getBlockAt(fixed, y, v)
                                                      : origin.getWorld().getBlockAt(v, y, fixed);
-                if (edge) {
-                    if (!isFrame(def, b)) return false;
-                }
+                if (!isFrame(def, b)) return false;
             }
         }
         // 填充内部为空气才填充传送方块 | fill only if interior is air
@@ -146,7 +201,7 @@ public class PortalManager implements Listener {
                                                      : origin.getWorld().getBlockAt(v, y, fixed);
                 if (b.getType().isAir()) {
                     b.setType(def.portalBlock);
-                    activePortals.put(b.getLocation(), def);
+                    activePortals.put(b.getLocation().getBlock().getLocation(), def);
                     placed = true;
                 }
             }
@@ -160,20 +215,41 @@ public class PortalManager implements Listener {
     }
 
     @EventHandler
+    public void onQuit(PlayerQuitEvent e) {
+        lastTrigger.remove(e.getPlayer().getUniqueId());
+    }
+
+    @EventHandler
     public void onMove(PlayerMoveEvent e) {
-        if (e.getTo() == null) return;
-        Location feet = e.getTo().getBlock().getLocation();
-        PortalDef def = activePortals.get(feet);
+        Location to = e.getTo();
+        if (to == null) return;
+
+        Location toBlock = to.getBlock().getLocation();
+        PortalDef def = activePortals.get(toBlock);
         if (def == null) return;
-        // 进入传送门
+
+        // 只有“刚进入”该方块时才触发；站着不动/原地转头不会重复触发
+        Location fromBlock = e.getFrom().getBlock().getLocation();
+        if (fromBlock.equals(toBlock)) return;
+
         Player p = e.getPlayer();
+        UUID uuid = p.getUniqueId();
+        long now = System.currentTimeMillis();
+        Long last = lastTrigger.get(uuid);
+        if (last != null && now - last < REUSE_COOLDOWN_MS) return;
+        lastTrigger.put(uuid, now);
+
         p.sendMessage(plugin.getLang().tr("portal.teleporting", "name", def.name));
-        // 计算目标
         org.bukkit.World w = Bukkit.getWorld(def.world);
-        if (w == null) return;
-        Location dest = new Location(w, resolveCoord(def.x, feet.getX()), resolveCoord(def.y, feet.getY()), resolveCoord(def.z, feet.getZ()));
+        if (w == null) {
+            plugin.getLogger().warning("[Portal] Destination world not loaded: " + def.world);
+            return;
+        }
+        Location dest = new Location(w, resolveCoord(def.x, toBlock.getX()), resolveCoord(def.y, toBlock.getY()), resolveCoord(def.z, toBlock.getZ()));
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "portal", null);
+        // 传送门不做经济扣费，也不因移动取消（进入即传送）
+        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "portal",
+                player -> true, null);
     }
 
     private double resolveCoord(String v, double fallback) {

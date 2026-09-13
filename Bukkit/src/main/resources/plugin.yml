@@ -1,9 +1,17 @@
 name: NovaTeleport
 version: 2.0-SNAPSHOT
 main: com.novamclabs.StarTeleport
-api-version: 1.16
+# 插件只使用长期稳定的 Bukkit API，且编译基线取最短的那一端（spigot-api 1.20.1），
+# 因此同一个 jar 可在 1.20.x / 1.21.x / 26.x（26.1 / 26.1.2 / 26.2 …）上加载。
+#
+# api-version 取 1.20：这是所有受支持服务端都认得的最高「最低值」——
+# 服务端只拒绝比自身新的 api-version，声明 1.20 在 1.20.1 与 26.2 上都不会被拒。
+#
+# 字节码目标为 Java 17：1.20.0–1.20.4 的服务端只需要 Java 17（很多这类服仍跑在 17 上），
+# 而 1.20.5+ / 1.21.x（Java 21）与 26.x（Java 25）都能向上兼容加载 17 字节码。
+api-version: '1.20'
 folia-supported: true
-softdepend: [Vault, PlaceholderAPI, floodgate, Geyser, Parties, BetterTeams, SimpleClans, Factions, Guilds, WorldGuard, PlotSquared, Residence, Lands, GriefDefender, Towny]
+softdepend: [Vault, PlaceholderAPI, floodgate, Geyser, Parties, BetterTeams, SimpleClans, Factions, Guilds, WorldGuard, PlotSquared, Residence, Lands, GriefDefender, Towny, ItemsAdder, MMOItems]
 
 permissions:
   novateleport.pass:
@@ -71,8 +79,14 @@ permissions:
     description: 使用 /tpmenu 传送菜单
     default: true
 
+  novateleport.guild.use:
+    description: 使用 /gtp list、/gtp info
+    default: true
   novateleport.guild.home:
     description: 使用 /gtp home 工会据点传送
+    default: true
+  novateleport.guild.warp:
+    description: 使用 /gtp warp 工会传送点
     default: true
   novateleport.guild.admin:
     description: 管理工会据点/传送点
@@ -85,8 +99,17 @@ permissions:
     description: 传送到其他城镇
     default: op
 
+  novateleport.stele.use:
+    description: 使用传送石碑（列表/定位/旅行）
+    default: true
+  novateleport.toll.use:
+    description: 使用付费传送点（list/mywarps/tp）
+    default: true
   novateleport.toll.create:
     description: 创建付费传送点
+    default: true
+  novateleport.toll.delete:
+    description: 删除自己的付费传送点
     default: true
   novateleport.toll.delete.others:
     description: 删除他人付费传送点
@@ -184,7 +207,6 @@ commands:
   stele:
     description: 传送石碑系统
     usage: /stele <list|locate|create|remove|travel|activatefor>
-    permission: novateleport.admin
   deathback:
     description: 回到上次死亡位置
     usage: /deathback
@@ -218,17 +240,14 @@ commands:
   gtp:
     description: 工会传送
     usage: /gtp <home|sethome|warp|setwarp|delwarp|list|info>
-    permission: novateleport.guild.home
 
   towntp:
     description: Towny 城镇传送
     usage: /towntp [城镇名]
-    permission: novateleport.towny.home
 
   tollwarp:
     description: 付费传送点
     usage: /tollwarp <list|mywarps|create|delete|setprice|tp|info>
-    permission: novateleport.toll.create
     aliases: [publichomes]
 
   tplog:

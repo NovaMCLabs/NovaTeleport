@@ -261,7 +261,8 @@ public class TollWarpManager {
     }
 
     /**
-     * 传送到付费传送点
+     * 传送到付费传送点。费用在传送真正执行时才结算，倒计时被取消不会扣钱。
+     * Charges are settled at teleport time so a cancelled countdown never costs the player.
      */
     public boolean teleportToWarp(Player player, String warpName) {
         TollWarp warp = warps.get(warpName.toLowerCase(Locale.ROOT));
@@ -280,60 +281,24 @@ public class TollWarpManager {
             return false;
         }
 
-        // owner uses it for free
-        if (warp.getOwnerId().equals(player.getUniqueId())) {
-            TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "tollwarp",
-                () -> player.sendMessage(plugin.getLang().tr("toll.teleported_owner", "name", warp.getName())));
-            return true;
-        }
-
-        // bypass permission
-        if (player.hasPermission("novateleport.toll.bypass")) {
-            TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "tollwarp",
-                () -> player.sendMessage(plugin.getLang().tr("toll.teleported_bypass", "name", warp.getName())));
-            incrementUsage(warp);
-            return true;
-        }
-
+        boolean owner = warp.getOwnerId().equals(player.getUniqueId());
+        boolean bypass = player.hasPermission("novateleport.toll.bypass");
         double price = warp.getPrice();
-        if (price > 0) {
-            if (!EconomyUtil.isEnabled(plugin) || !EconomyUtil.hasProvider()) {
-                player.sendMessage(plugin.getLang().t("economy.not_available"));
-                return false;
-            }
 
-            double balance = EconomyUtil.getBalance(player);
-            if (balance < price) {
-                player.sendMessage(plugin.getLang().tr("toll.insufficient_funds", "price", EconomyUtil.format(price)));
-                return false;
-            }
-
-            OfflinePlayer owner = Bukkit.getOfflinePlayer(warp.getOwnerId());
-            double ownerFee = price * (ownerFeePercentage / 100.0);
-            ownerFee = Math.min(price, Math.max(0.0, ownerFee));
-            double serverFee = Math.max(0.0, price - ownerFee);
-
-            if (ownerFee > 0) {
-                if (!EconomyUtil.transfer(plugin, player, owner, ownerFee)) {
-                    player.sendMessage(plugin.getLang().tr("toll.insufficient_funds", "price", EconomyUtil.format(price)));
-                    return false;
-                }
-            }
-            if (serverFee > 0) {
-                if (!EconomyUtil.charge(plugin, player, serverFee)) {
-                    player.sendMessage(plugin.getLang().tr("toll.insufficient_funds", "price", EconomyUtil.format(price)));
-                    return false;
-                }
-            }
-
-            if (owner.isOnline() && owner.getPlayer() != null && ownerFee > 0) {
-                owner.getPlayer().sendMessage(plugin.getLang().tr(
-                    "toll.owner_received",
-                    "amount", EconomyUtil.format(ownerFee),
-                    "player", player.getName(),
-                    "name", warp.getName()
-                ));
-            }
+        final TeleportUtil.Payment payment;
+        final String doneKey;
+        if (owner) {
+            payment = p -> true;
+            doneKey = "toll.teleported_owner";
+        } else if (bypass) {
+            payment = p -> { incrementUsage(warp); return true; };
+            doneKey = "toll.teleported_bypass";
+        } else if (price > 0) {
+            payment = p -> payToll(p, warp, price);
+            doneKey = "toll.teleported_toll";
+        } else {
+            payment = p -> { incrementUsage(warp); return true; };
+            doneKey = "toll.teleported_toll";
         }
 
         try {
@@ -343,9 +308,47 @@ public class TollWarpManager {
         } catch (Exception ignored) {
         }
 
-        TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "tollwarp",
-            () -> player.sendMessage(plugin.getLang().tr("toll.teleported_toll", "name", warp.getName(), "price", EconomyUtil.format(price))));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "tollwarp", payment,
+            () -> player.sendMessage(plugin.getLang().tr(doneKey, "name", warp.getName(), "price", EconomyUtil.format(price))));
+        return true;
+    }
 
+    /** 支付传送费用：按比例分给所有者，其余作为服务器收入 | split the price between owner and server */
+    private boolean payToll(Player player, TollWarp warp, double price) {
+        if (!EconomyUtil.isEnabled(plugin) || !EconomyUtil.hasProvider()) {
+            player.sendMessage(plugin.getLang().t("economy.not_available"));
+            return false;
+        }
+        double balance = EconomyUtil.getBalance(player);
+        if (balance < price) {
+            player.sendMessage(plugin.getLang().tr("toll.insufficient_funds", "price", EconomyUtil.format(price)));
+            return false;
+        }
+
+        OfflinePlayer owner = Bukkit.getOfflinePlayer(warp.getOwnerId());
+        double ownerFee = price * (ownerFeePercentage / 100.0);
+        ownerFee = Math.min(price, Math.max(0.0, ownerFee));
+        double serverFee = Math.max(0.0, price - ownerFee);
+
+        if (ownerFee > 0 && !EconomyUtil.transfer(plugin, player, owner, ownerFee)) {
+            player.sendMessage(plugin.getLang().tr("toll.insufficient_funds", "price", EconomyUtil.format(price)));
+            return false;
+        }
+        if (serverFee > 0 && !EconomyUtil.charge(plugin, player, serverFee)) {
+            // 服务器手续费扣除失败：把已转给所有者的部分退回，避免玩家白付
+            if (ownerFee > 0) EconomyUtil.deposit(plugin, owner, ownerFee);
+            player.sendMessage(plugin.getLang().tr("toll.insufficient_funds", "price", EconomyUtil.format(price)));
+            return false;
+        }
+
+        if (owner.isOnline() && owner.getPlayer() != null && ownerFee > 0) {
+            owner.getPlayer().sendMessage(plugin.getLang().tr(
+                "toll.owner_received",
+                "amount", EconomyUtil.format(ownerFee),
+                "player", player.getName(),
+                "name", warp.getName()
+            ));
+        }
         incrementUsage(warp);
         return true;
     }
@@ -371,9 +374,5 @@ public class TollWarpManager {
 
     public TollWarp getWarp(String name) {
         return warps.get(name.toLowerCase(Locale.ROOT));
-    }
-
-    public ConfigurationSection getGuiConfig() {
-        return config.getConfigurationSection("gui");
     }
 }

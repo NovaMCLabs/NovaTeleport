@@ -1,16 +1,20 @@
 package com.novamclabs;
 
+import com.novamclabs.common.scheduler.SchedulerWrapper;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
-import org.bukkit.scheduler.BukkitTask;
 import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Level;
@@ -19,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class StarTeleport extends JavaPlugin implements Listener, CommandExecutor {
     private boolean debug;
     private int teleportDelay;
+    private SchedulerWrapper scheduler;
     private com.novamclabs.storage.DataStore dataStore;
     private com.novamclabs.lang.LanguageManager lang;
     private com.novamclabs.animations.AnimationManager animationManager;
@@ -41,42 +46,65 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private com.novamclabs.towny.TownyTeleportManager townyTeleportManager;
     private com.novamclabs.log.TeleportLogManager teleportLogManager;
 
-    // 使用 UUID 作为 key，避免 Player 对象引用导致的内存泄漏 | Use UUID keys to avoid Player reference leaks
-    private final Map<UUID, BukkitTask> taskMap = new ConcurrentHashMap<>();
-    // 记录玩家是否可以触发传送（用于控制重复触发）
-    private final Map<UUID, Boolean> canTriggerMap = new ConcurrentHashMap<>();
-    // 记录玩家开始传送时的位置
-    private final Map<UUID, org.bukkit.Location> originalLocations = new ConcurrentHashMap<>();
-    
+    /** PlaceholderAPI 扩展（服务端未安装时为 null）| null unless PlaceholderAPI is installed */
+    private com.novamclabs.hook.NovaPlaceholderExpansion placeholderExpansion;
+
     // 配置键常量
     private static final String CONFIG_DEBUG = "debug";
     private static final String CONFIG_DELAY = "delay_seconds";
     private static final String CONFIG_THRESHOLD = "threshold_y";
     private static final String CONFIG_WORLDS = "worlds";
-    
+
+    /**
+     * 一次待执行的传送（倒计时中）。
+     * A pending (counting down) teleport.
+     */
+    public static final class TeleportSession {
+        final SchedulerWrapper.ScheduledTask task;
+        final Location origin;
+        final boolean cancelOnMove;
+        final String type;
+
+        TeleportSession(SchedulerWrapper.ScheduledTask task, Location origin, boolean cancelOnMove, String type) {
+            this.task = task;
+            this.origin = origin;
+            this.cancelOnMove = cancelOnMove;
+            this.type = type;
+        }
+    }
+
+    // 所有待执行传送（含自动世界传送与命令传送），用 UUID 作 key 避免 Player 引用泄漏
+    private final Map<UUID, TeleportSession> sessions = new ConcurrentHashMap<>();
+    // 自动世界传送：是否允许再次触发
+    private final Map<UUID, Boolean> canTriggerMap = new ConcurrentHashMap<>();
+
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!cmd.getName().equalsIgnoreCase("stp")) {
             return false;
         }
-        
+
         if (!sender.hasPermission("novateleport.command.reload")) {
             sender.sendMessage(lang.t("command.no_permission"));
             return true;
         }
-        
+
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             reloadPluginConfig();
             sender.sendMessage(lang.t("command.reload.success"));
             return true;
         }
-        
+
         return false;
     }
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        // 调度器必须最先创建：其他管理器在构造期即会用它 | scheduler must exist before other managers
+        this.scheduler = new com.novamclabs.scheduler.FoliaScheduler(this);
+        getLogger().info("[Scheduler] Folia=" + scheduler.isFolia());
+
         // 初始化语言系统
         this.lang = new com.novamclabs.lang.LanguageManager(this);
         this.lang.ensureDefaults("zh_CN","en_US");
@@ -103,10 +131,10 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         this.crossServerService = new com.novamclabs.cross.CrossServerService(this);
         // 离线传送队列 | Offline teleport queue
         this.offlineTeleportManager = new com.novamclabs.offline.OfflineTeleportManager(this);
-        // 死亡回溯 | death/back system
-        this.deathManager = new com.novamclabs.death.DeathManager(this);
         // 传送石碑 | Teleportation Stele
         this.steleManager = new com.novamclabs.stele.SteleManager(this);
+        // 死亡回溯 | death/back system
+        this.deathManager = new com.novamclabs.death.DeathManager(this);
 
         loadConfig();
 
@@ -143,11 +171,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         }
         // 外部队伍适配器 | external party adapter
         this.partyAdapterManager = new com.novamclabs.party.adapter.PartyAdapterManager();
-        this.partyAdapterManager.detectAndRegister(this, () -> com.novamclabs.party.PartyNameDisplay.refreshAll(this.partyAdapterManager.getActive()));
-        com.novamclabs.party.PartyNameDisplay.refreshAll(this.partyAdapterManager.getActive());
-        getServer().getScheduler().runTaskTimer(this,
-                () -> com.novamclabs.party.PartyNameDisplay.refreshAll(this.partyAdapterManager.getActive()),
-                200L, 200L);
+        this.partyAdapterManager.detectAndRegister(this, this::refreshPartyDisplay);
+        refreshPartyDisplay();
+        scheduler.runTimer(this::refreshPartyDisplay, 200L, 200L);
 
         if (getCommand("party") != null) {
             // 内置组队系统 | built-in party system
@@ -199,19 +225,55 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             getServer().getPluginManager().registerEvents(lcmd, this);
         }
 
+        registerPlaceholderExpansion();
+
         getLogger().info(lang.t("plugin.startup"));
+    }
+
+    /**
+     * 注册 PlaceholderAPI 扩展（软依赖；未安装时跳过）。
+     * PlaceholderAPI 是编译期 provided 依赖，类缺失时不能让整个插件加载失败。
+     */
+    private void registerPlaceholderExpansion() {
+        if (getServer().getPluginManager().getPlugin("PlaceholderAPI") == null) return;
+        try {
+            this.placeholderExpansion = new com.novamclabs.hook.NovaPlaceholderExpansion(this);
+            if (this.placeholderExpansion.register()) {
+                getLogger().info("[PlaceholderAPI] Registered expansion: %novateleport_<key>%");
+            } else {
+                this.placeholderExpansion = null;
+            }
+        } catch (Throwable t) {
+            this.placeholderExpansion = null;
+            getLogger().warning("[PlaceholderAPI] Expansion could not be registered: "
+                    + t.getClass().getSimpleName() + (t.getMessage() == null ? "" : ": " + t.getMessage()));
+        }
+    }
+
+    /** 刷新队伍名前缀（同时考虑外部适配器与内置组队）| refresh party name prefixes */
+    private void refreshPartyDisplay() {
+        com.novamclabs.party.PartyNameDisplay.refreshAll(
+                this.partyAdapterManager != null ? this.partyAdapterManager.getActive() : null,
+                this.partyManager,
+                this.scheduler);
     }
 
     @Override
     public void onDisable() {
         // 取消所有待处理的传送任务
-        taskMap.values().forEach(BukkitTask::cancel);
-        taskMap.clear();
+        sessions.values().forEach(s -> s.task.cancel());
+        sessions.clear();
         canTriggerMap.clear();
-        originalLocations.clear();
-        getLogger().info(lang.t("plugin.shutdown"));
+        if (placeholderExpansion != null) {
+            try { placeholderExpansion.unregister(); } catch (Throwable ignored) {}
+            placeholderExpansion = null;
+        }
+        if (scheduler != null) scheduler.cancelAllTasks();
+        if (crossServerService != null) crossServerService.close();
+        if (teleportLogManager != null) teleportLogManager.shutdown();
+        if (lang != null) getLogger().info(lang.t("plugin.shutdown"));
     }
-    
+
     /**
      * 重新加载插件配置
      */
@@ -223,15 +285,19 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         com.novamclabs.util.EconomyUtil.setup(this);
         loadConfig();
         if (this.javaMenus != null) this.javaMenus.reload();
+        if (this.scriptingManager != null) this.scriptingManager.reload();
         com.novamclabs.util.RegionGuardUtil.init(this);
         if (this.steleManager != null) this.steleManager.reload();
+        if (this.portalManager != null) this.portalManager.reload();
+        if (this.rtpPoolManager != null) this.rtpPoolManager.reload();
+        if (this.scrollManager != null) this.scrollManager.loadConfig();
         if (this.guildManager != null) this.guildManager.reload();
         if (this.guildWarpManager != null) this.guildWarpManager.reload();
         if (this.townyTeleportManager != null) this.townyTeleportManager.reload();
         if (this.tollWarpManager != null) this.tollWarpManager.reload();
         if (this.teleportLogManager != null) this.teleportLogManager.reloadAll();
     }
-    
+
     /**
      * 加载配置文件
      */
@@ -246,7 +312,42 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             getLogger().info(lang.tr("debug.delay", "seconds", teleportDelay));
         }
     }
-    
+
+    // ===== 传送会话管理 | teleport session management =====
+
+    /** 登记一次待执行传送（倒计时中）| register a pending teleport */
+    public void trackTeleport(Player player, SchedulerWrapper.ScheduledTask task, boolean cancelOnMove, String type) {
+        Location origin = player.getLocation().clone();
+        sessions.put(player.getUniqueId(), new TeleportSession(task, origin, cancelOnMove, type));
+    }
+
+    /** 注销传送会话 | unregister a pending teleport */
+    public void untrackTeleport(UUID uuid) {
+        sessions.remove(uuid);
+    }
+
+    public boolean isTeleporting(UUID uuid) {
+        return sessions.containsKey(uuid);
+    }
+
+    private boolean isInteractionBlocked(UUID uuid) {
+        if (!getConfig().getBoolean("commands.block_interactions", false)) return false;
+        return sessions.containsKey(uuid);
+    }
+
+    /** 取消玩家当前待执行的传送 | cancel the pending teleport of a player */
+    public void cancelTeleport(Player player, boolean showTitle) {
+        TeleportSession session = sessions.remove(player.getUniqueId());
+        if (session == null) return;
+        session.task.cancel();
+        // 注意：这里不能重置 canTriggerMap。阈值传送在玩家仍处于阈值下方时每次移动都会重新判定，
+        // 若取消后立刻允许重触发，就会变成“取消 → 重新开始倒计时 → 再取消”的循环。
+        // 重新允许触发只由两处负责：成功传送后的回调、以及扣费/校验失败的中止回调。
+        if (showTitle && lang != null) {
+            player.sendTitle(lang.t("teleport.cancelled.title"), "", 10, 20, 10);
+        }
+    }
+
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         if (event.getTo() == null) {
@@ -256,24 +357,22 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
 
-        if (!player.hasPermission("novateleport.pass")) {
-            return;
-        }
-
-        // 检查是否在传送倒计时中
-        if (taskMap.containsKey(uuid)) {
-            // 只有当玩家移动了指定格数时才取消传送
-            if (hasMovedFullBlock(event)) {
-                cancelExistingTask(player, true);
+        // 倒计时中的传送：按配置的移动距离取消
+        TeleportSession session = sessions.get(uuid);
+        if (session != null) {
+            if (session.cancelOnMove && hasMovedTooFar(event, session.origin)) {
+                cancelTeleport(player, true);
                 if (debug) {
                     getLogger().log(Level.INFO, lang.tr("debug.cancel_due_to_move", "player", player.getName()));
                 }
-                return;
-            }
-            if (debug) {
+            } else if (debug) {
                 getLogger().log(Level.INFO, lang.tr("debug.continue_due_to_small_move", "player", player.getName()));
             }
-            // 如果只是微小移动，继续保持传送状态
+            return;
+        }
+
+        // 以下为世界阈值自动传送 | auto world threshold teleport
+        if (!player.hasPermission("novateleport.pass")) {
             return;
         }
 
@@ -295,40 +394,56 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     @EventHandler
     public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
         Player player = event.getPlayer();
-        cancelExistingTask(player, false);
+        cancelTeleport(player, false);
         canTriggerMap.remove(player.getUniqueId());
-        originalLocations.remove(player.getUniqueId());
     }
-    
+
+    @EventHandler
+    public void onInteract(PlayerInteractEvent event) {
+        if (event.getPlayer() == null) return;
+        if (isInteractionBlocked(event.getPlayer().getUniqueId())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onBreak(BlockBreakEvent event) {
+        if (isInteractionBlocked(event.getPlayer().getUniqueId())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onPlace(BlockPlaceEvent event) {
+        if (isInteractionBlocked(event.getPlayer().getUniqueId())) {
+            event.setCancelled(true);
+        }
+    }
+
     /**
-     * 检查玩家是否移动了指定格数（2格）
+     * 检查玩家是否已离开会话起点超过配置的距离（默认 2 格）。
+     * 只比较水平位移与 Y 轴，忽略仅转头造成的微小变化。
      */
-    private boolean hasMovedFullBlock(PlayerMoveEvent event) {
-        if (event.getTo() == null) {
+    private boolean hasMovedTooFar(PlayerMoveEvent event, Location origin) {
+        if (event.getTo() == null || origin == null) {
             return false;
         }
-
-        Player player = event.getPlayer();
-        UUID uuid = player.getUniqueId();
-        org.bukkit.Location originalLoc = originalLocations.get(uuid);
-
-        // 如果没有原始位置记录，说明是新的传送，记录当前位置
-        if (originalLoc == null) {
-            originalLoc = event.getFrom().clone(); // 克隆位置以避免引用问题
-            originalLocations.put(uuid, originalLoc);
-            return false;
+        // 配置为 0/负数时按默认值处理：否则纯转头（位移为 0）也会满足阈值而被取消
+        double distance = getConfig().getDouble("commands.cancel_move_distance", 2.0);
+        if (!(distance > 0)) distance = 2.0;
+        if (event.getTo().getWorld() != origin.getWorld()) {
+            return true;
         }
-
-        // 使用精确坐标计算移动距离
-        double deltaX = Math.abs(event.getTo().getX() - originalLoc.getX());
-        double deltaZ = Math.abs(event.getTo().getZ() - originalLoc.getZ());
+        double deltaX = Math.abs(event.getTo().getX() - origin.getX());
+        double deltaZ = Math.abs(event.getTo().getZ() - origin.getZ());
+        double deltaY = Math.abs(event.getTo().getY() - origin.getY());
 
         if (debug) {
-            getLogger().log(Level.INFO, lang.tr("debug.move_distance", "player", player.getName(), "dx", String.format("%.2f", deltaX), "dz", String.format("%.2f", deltaZ)));
+            getLogger().log(Level.INFO, lang.tr("debug.move_distance", "player", event.getPlayer().getName(),
+                    "dx", String.format("%.2f", deltaX), "dz", String.format("%.2f", deltaZ)));
         }
 
-        // 如果任一方向移动超过2格，则取消传送
-        return deltaX >= 2.0 || deltaZ >= 2.0;
+        return deltaX > distance || deltaZ > distance || deltaY > distance;
     }
 
     /**
@@ -342,24 +457,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
                event.getFrom().getBlockY() != event.getTo().getBlockY() ||
                event.getFrom().getBlockZ() != event.getTo().getBlockZ();
     }
-    
-    /**
-     * 取消玩家现有的传送任务
-     * @param showTitle 是否显示取消传送的Title
-     */
-    private void cancelExistingTask(Player player, boolean showTitle) {
-        UUID uuid = player.getUniqueId();
-        BukkitTask existingTask = taskMap.remove(uuid);
-        if (existingTask != null) {
-            existingTask.cancel();
-            if (showTitle) {
-                player.sendTitle(lang.t("teleport.cancelled.title"), "", 10, 20, 10);
-            }
-        }
-        // 清除原始位置记录
-        originalLocations.remove(uuid);
-    }
-    
+
     /**
      * 查找适用的传送规则
      */
@@ -382,10 +480,10 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
                 );
             }
         }
-        
+
         return null;
     }
-    
+
     /**
      * 处理传送逻辑
      */
@@ -405,7 +503,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
 
             // 如果在阈值位置移动，取消传送但不显示Title
             if (fromY == currentY) {
-                cancelExistingTask(player, false);
+                cancelTeleport(player, false);
                 return;
             }
 
@@ -432,7 +530,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             }
         }
     }
-    
+
     /**
      * 开始传送流程
      * @return 是否成功开始（可用于控制重复触发）
@@ -444,24 +542,15 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             return false;
         }
 
-        // 经济扣费（自动阈值传送）
-        double cost = com.novamclabs.util.EconomyUtil.getCost(this, "auto_world_teleport");
-        if (!com.novamclabs.util.EconomyUtil.charge(this, player, cost)) {
-            player.sendMessage(lang.tr("economy.not_enough", "amount", com.novamclabs.util.EconomyUtil.format(cost)));
-            return false;
-        }
-
-        // 记录玩家开始传送时的位置
-        originalLocations.put(player.getUniqueId(), player.getLocation().clone());
         // 记录/back 位置
         try {
             if (this.dataStore != null) {
                 this.dataStore.setBack(player.getUniqueId(), player.getLocation());
             }
         } catch (Exception ignored) {}
-        
+
         scheduleTeleport(player, targetWorld);
-        
+
         if (debug) {
             getLogger().log(Level.INFO, lang.tr("debug.trigger_teleport", "player", player.getName(), "world", rule.targetWorldName,
                     "x", String.format("%.2f", player.getLocation().getX()),
@@ -487,52 +576,43 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     public com.novamclabs.rtp.RtpPoolManager getRtpPoolManager() { return this.rtpPoolManager; }
     public com.novamclabs.scripting.ScriptingManager getScriptingManager() { return this.scriptingManager; }
     public com.novamclabs.cross.CrossServerService getCrossServerService() { return this.crossServerService; }
+    public SchedulerWrapper getScheduler() { return this.scheduler; }
+    public com.novamclabs.region.RegionAdapterManager getRegionManager() {
+        return com.novamclabs.util.RegionGuardUtil.getManager();
+    }
+    public com.novamclabs.guild.GuildManager getGuildManager() { return this.guildManager; }
+    public com.novamclabs.guild.GuildWarpManager getGuildWarpManager() { return this.guildWarpManager; }
+    public com.novamclabs.towny.TownyTeleportManager getTownyTeleportManager() { return this.townyTeleportManager; }
+    public com.novamclabs.toll.TollWarpManager getTollWarpManager() { return this.tollWarpManager; }
+    public com.novamclabs.party.PartyManager getPartyManager() { return this.partyManager; }
+    public com.novamclabs.party.adapter.PartyAdapterManager getPartyAdapterManager() { return this.partyAdapterManager; }
+    public com.novamclabs.stele.SteleManager getSteleManager() { return this.steleManager; }
+    public com.novamclabs.offline.OfflineTeleportManager getOfflineTeleportManager() { return this.offlineTeleportManager; }
     public void setDebug(boolean enabled) { this.debug = enabled; }
-    
+    public boolean isDebug() { return this.debug; }
+
     /**
-     * 调度传送任务
+     * 调度自动世界传送 | schedule auto world teleport
      */
     private void scheduleTeleport(Player player, World targetWorld) {
-        UUID uuid = player.getUniqueId();
         org.bukkit.Location target = targetWorld.getSpawnLocation();
-        BukkitTask task = com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(this, player, target, teleportDelay, "auto_world_teleport", () -> {
-            // 传送完成后的回调
-            BukkitTask t = taskMap.remove(uuid);
-            if (t != null) t.cancel();
-            originalLocations.remove(uuid);
-            canTriggerMap.remove(uuid);
-            player.sendMessage(lang.t("teleport.completed"));
-        });
-        if (task != null) {
-            taskMap.put(uuid, task);
-        }
+        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(this, player, target, teleportDelay, "auto_world_teleport",
+                com.novamclabs.util.TeleportUtil.economyPayment(this, "auto_world_teleport"),
+                () -> {
+                    player.sendMessage(lang.t("teleport.completed"));
+                    canTriggerMap.remove(player.getUniqueId());
+                },
+                // 扣费/校验失败时允许重新触发，否则玩家要重新穿过阈值线
+                () -> canTriggerMap.remove(player.getUniqueId()));
     }
 
-    /**
-     * 执行传送（保留旧接口，当前主要使用 TeleportUtil）
-     */
-    private void executeTeleport(Player player, World targetWorld) {
-        UUID uuid = player.getUniqueId();
-        BukkitTask task = taskMap.remove(uuid);
-        if (task != null) {
-            task.cancel();
-        }
-
-        // 清除原始位置记录
-        originalLocations.remove(uuid);
-        canTriggerMap.remove(uuid);
-
-        player.teleport(targetWorld.getSpawnLocation());
-        player.sendMessage(lang.t("teleport.completed"));
-    }
-    
     /**
      * 传送规则数据类
      */
     private static class TeleportRule {
         final String targetWorldName;
         final int threshold;
-        
+
         TeleportRule(String targetWorldName, int threshold) {
             this.targetWorldName = targetWorldName;
             this.threshold = threshold;

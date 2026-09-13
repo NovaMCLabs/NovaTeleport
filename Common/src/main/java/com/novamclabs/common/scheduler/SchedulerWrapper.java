@@ -53,10 +53,28 @@ public interface SchedulerWrapper {
     void runAtEntity(Object entity, Runnable task);
     
     /**
-     * 在指定位置执行任务（Folia）或主线程（Bukkit）
+     * 在指定位置所属区域执行任务（Folia）或主线程（Bukkit）
      * Execute task at location (Folia) or main thread (Bukkit)
      */
     void runAtLocation(Object world, int x, int y, int z, Runnable task);
+
+    /**
+     * 在指定位置所属区域延迟执行任务
+     * Execute task at location after a delay, on the region owning it.
+     */
+    ScheduledTask runAtLocationLater(Object world, int x, int y, int z, Runnable task, long delayTicks);
+
+    /**
+     * 在实体的区域定时重复执行（Folia 必需：玩家倒计时必须在实体所属区域线程执行）
+     * Repeat a task on the entity's owning region (required on Folia).
+     */
+    ScheduledTask runAtEntityTimer(Object entity, Runnable task, long delayTicks, long periodTicks);
+
+    /**
+     * 在指定位置所属区域定时重复执行
+     * Repeat a task on the region owning the given location.
+     */
+    ScheduledTask runAtLocationTimer(Object world, int x, int y, int z, Runnable task, long delayTicks, long periodTicks);
     
     /**
      * 传送实体（异步安全）

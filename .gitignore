@@ -19,6 +19,12 @@ Thumbs.db
 # Logs
 *.log
 
+# Build output
+/artifacts/
+
+# Serena / editor tooling
+.serena/
+
 # Other
 *.tmp
 *.swp

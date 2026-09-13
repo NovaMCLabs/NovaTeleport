@@ -21,12 +21,40 @@
     </modules>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <!--
+          Java 17：这是「一个 jar 通吃 1.20.x / 1.21.x / 26.x」的关键。
+          - 1.20.0–1.20.4 服务端只要求 Java 17，很多这类服仍跑在 17 上；
+          - 1.20.5+ 与 1.21.x 要求 Java 21，26.x 要求 Java 25，都能加载 17 字节码（只向上不向下）。
+          因此编译目标必须压到 17，否则 1.20.0–1.20.4 上会直接 UnsupportedClassVersionError。
+          注意：构建需要 JDK 25。输出虽然是 17 字节码，但 javac 必须能读取我们依赖的类文件版本：
+          Velocity 模块的 velocity-api 4.x 是 Java 25 字节码，Bukkit 模块的 WorldGuard/BetterTeams/Lands
+          是 Java 21 字节码。构建用 JDK ≠ 运行用 JRE。
+        -->
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <spigot.api.version>1.21.4-R0.1-SNAPSHOT</spigot.api.version>
-        <velocity.api.version>3.3.0-SNAPSHOT</velocity.api.version>
-        <bungeecord.api.version>1.19-R0.1-SNAPSHOT</bungeecord.api.version>
+        <!--
+          编译基线取最老的受支持版本：只引用 1.20.1 就存在 API，
+          比自己晚出现的 API 一律不能直接调用（否则旧服务端 NoSuchMethodError）。
+          Minecraft 自 2025-12 起改用 年.版本.修订 命名，26.x 仍在同一基线之上。
+        -->
+        <spigot.api.version>1.20.1-R0.1-SNAPSHOT</spigot.api.version>
+        <!--
+          代理侧 API：只用到 Plugin#onEnable/getLogger 与 Velocity 的 @Plugin/@Subscribe，
+          这套接口跨版本稳定，所以编译基线取最新即可。
+          bungeecord-api 的构件已从 oss.sonatype.org 迁到 repo.papermc.io（即下方的 papermc-repo），
+          当前版本线为 26.1。BungeeCord 的 API 不含版本相关的 NMS，向前向后都兼容，
+          因此同一个 jar 在旧版 BungeeCord 上同样能加载。
+        -->
+        <velocity.api.version>4.1.1</velocity.api.version>
+        <bungeecord.api.version>26.1-R0.1-SNAPSHOT</bungeecord.api.version>
+        <!--
+          bungeecord-chat：Player#spigot().sendMessage(BaseComponent...) 需要它。
+          1.20.x / 1.21.x 的 spigot-api 会传递依赖它，较新的 spigot-api 则不再传递，
+          因此显式声明。版本与 Paper 内置的一致，运行期由服务端提供（provided）。
+        -->
+        <bungeecord.chat.version>1.21-R0.2</bungeecord.chat.version>
+        <!-- Adventure：Towny 等插件的 API 签名引用它，仅编译期需要（Paper 运行期自带） -->
+        <adventure.version>5.2.0</adventure.version>
     </properties>
 
     <repositories>
@@ -93,6 +121,21 @@
         <repository>
             <id>opencollab-release</id>
             <url>https://repo.opencollab.dev/maven-releases/</url>
+        </repository>
+        <!-- PlaceholderAPI（可选软依赖，仅编译期） -->
+        <repository>
+            <id>extendedclip</id>
+            <url>https://repo.extendedclip.com/releases/</url>
+        </repository>
+        <!-- Lands API（Lands 已将坐标从 me.angeschossen 迁到 com.incredibleplugins） -->
+        <repository>
+            <id>incredibleplugins</id>
+            <url>https://repo.incredibleplugins.com/releases</url>
+        </repository>
+        <!-- Parties API -->
+        <repository>
+            <id>alessiodp</id>
+            <url>https://repo.alessiodp.com/releases/</url>
         </repository>
     </repositories>
 

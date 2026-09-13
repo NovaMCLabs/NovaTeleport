@@ -45,16 +45,14 @@ public class PlotSquaredAdapter implements RegionAdapter {
             }
             
             PlotPlayer<?> plotPlayer = BukkitUtil.adapt(p);
-            
-            // 检查是否是地皮成员或拥有者
-            // Check if player is member or owner of the plot
-            if (plot.isAdded(plotPlayer.getUUID())) {
-                return true;
-            }
-            
+
+            // 交给 PlotSquared 自己判断：DENY_TELEPORT 标志有 NONE/OWNERS/MEMBERS/TRUSTED/NONOWNERS
+            // 等取值，"是地皮成员就放行"的短路会让地皮主人设置的 deny-teleport 完全失效
+            // （例如设成 TRUSTED 时，被信任的玩家本来应当被挡在外面）。
             return com.plotsquared.core.plot.flag.implementations.DenyTeleportFlag.allowsTeleport(plotPlayer, plot);
 
         } catch (Throwable t) {
+            com.novamclabs.region.RegionAdapterManager.logOnce(name(), t);
             return true;
         }
     }

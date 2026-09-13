@@ -1,8 +1,6 @@
 package com.novamclabs.util;
 
 import com.novamclabs.StarTeleport;
-import net.md_5.bungee.api.ChatMessageType;
-import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.entity.Player;
 
 /**
@@ -59,6 +57,6 @@ public final class DisplayUtil {
     }
 
     public static void sendActionBar(Player player, String message) {
-        player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(message));
+        ChatCompat.sendActionBar(player, message);
     }
 }

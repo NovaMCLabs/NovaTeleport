@@ -2,8 +2,8 @@ package com.novamclabs.region.impl;
 
 import com.novamclabs.region.RegionAdapter;
 import me.angeschossen.lands.api.LandsIntegration;
+import me.angeschossen.lands.api.flags.type.Flags;
 import me.angeschossen.lands.api.land.Area;
-import me.angeschossen.lands.api.role.enums.RoleSetting;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -49,9 +49,11 @@ public class LandsAdapter implements RegionAdapter {
             
             // 检查玩家是否有进入权限
             // Check if player has enter permission
-            return area.hasRoleFlag(p.getUniqueId(), RoleSetting.LAND_ENTER);
+            // Lands 未提供独立的 "enter" 标志，LAND_ENTER 即社区惯例的进入权限
+            return area.hasRoleFlag(p.getUniqueId(), Flags.LAND_ENTER);
             
         } catch (Throwable t) {
+            com.novamclabs.region.RegionAdapterManager.logOnce(name(), t);
             return true;
         }
     }

@@ -1,387 +1,230 @@
 # NovaTeleport 架构文档
 # NovaTeleport Architecture Documentation
 
-本文档详细说明 NovaTeleport 2.0 的架构设计。
+本文档说明 NovaTeleport 2.0 的实际结构。
 
-This document details the architecture design of NovaTeleport 2.0.
-
----
-
-## 📐 总体架构 | Overall Architecture
-
-### 模块化设计 | Modular Design
-
-NovaTeleport 采用多模块 Maven 项目结构：
-
-```
-NovaTeleport-Parent/
-├── Common/          # 共享代码和接口
-├── Bukkit/          # Bukkit/Spigot/Paper/Folia 实现
-├── BungeeCore/      # BungeeCord 代理支持
-├── Velocity/        # Velocity 代理支持
-├── Folia/           # Folia 特定功能
-└── Sqlit-Lib/       # 数据存储库
-```
+This document describes how NovaTeleport 2.0 is actually put together.
 
 ---
 
-## 🔌 适配器模式 | Adapter Pattern
+## 📐 模块结构 | Modules
 
-### 领地插件适配 | Region Plugin Integration
+```
+NovaTeleport-Parent/            pom 聚合
+├── Common/                     跨平台接口（SchedulerWrapper、Constants），无 Bukkit 依赖
+├── Sqlit-Lib/ (nova-storage)   独立存储库：JDBC 实现 + StorageProvider 接口（当前未被主插件使用）
+├── ExternalPluginStubs/        仅编译期使用的第三方 API 桩（Factions/SaberFactions）
+├── Bukkit/                     服务端插件本体：命令、管理器、适配器、资源
+├── BungeeCore/                 代理侧占位插件（仅打印启动日志）
+├── Velocity/                   代理侧占位插件（仅打印启动日志）
+├── Folia/                      说明性占位模块（packaging: pom，不产出 jar）
+└── Dist/                       把上面三个 jar 汇总复制到 target/dist
+```
 
-所有第三方插件集成都使用适配器模式，实现松耦合：
+- **Common** 不依赖 Bukkit，只定义 `SchedulerWrapper`（含 `ScheduledTask` 句柄）与配置键常量。
+- **ExternalPluginStubs** 在 `provided` 作用域下提供编译期符号，不会被打进发布包。
+- **Folia** 与 **BungeeCore/Velocity** 不包含功能代码；Folia 支持由 Bukkit 模块内的调度器适配实现。
+
+---
+
+## ⚙️ 调度抽象 | Scheduler Abstraction
+
+`Common` 中的 `SchedulerWrapper` 抽象了 Bukkit 与 Folia 的调度差异：
 
 ```java
-// 接口定义
+public interface SchedulerWrapper {
+    void runNextTick(Runnable task);
+    void runAsync(Runnable task);
+    ScheduledTask runLater(Runnable task, long delayTicks);
+    ScheduledTask runAtLocationLater(Object world, int x, int y, int z, Runnable task, long delayTicks);
+    ScheduledTask runTimer(Runnable task, long delayTicks, long periodTicks);
+    void runAtEntity(Object entity, Runnable task);
+    ScheduledTask runAtEntityTimer(Object entity, Runnable task, long delayTicks, long periodTicks);
+    ScheduledTask runAtLocationTimer(Object world, int x, int y, int z, Runnable task, long delayTicks, long periodTicks);
+    CompletableFuture<Boolean> teleportAsync(Object entity, Object location);
+    boolean isFolia();
+}
+```
+
+`Bukkit` 模块的 `FoliaScheduler` 基于 FoliaLib 实现它，并在 `StarTeleport#onEnable` 中最先实例化。
+**插件内所有调度都必须走 `plugin.getScheduler()`**，不再使用 `Bukkit.getScheduler()`：
+
+- 传送倒计时 → `runAtEntityTimer`（Folia 下在玩家所属区域线程执行）
+- 传送本身 → Folia 用 `teleportAsync`，其他平台用同步 `teleport()`
+- 粒子/音效 → 在实体或目标位置所属区域调度
+- 传送日志落盘 → `runAsync` 写文件，序列化留在主线程
+
+---
+
+## 🔌 适配器 | Adapters
+
+### 领地 | Region
+
+```java
 public interface RegionAdapter {
     String name();
     boolean isPresent();
     boolean canEnter(Player player, Location destination);
 }
-
-// 具体实现
-public class WorldGuardAdapter implements RegionAdapter {
-    // WorldGuard API 实现
-}
-
-public class PlotSquaredAdapter implements RegionAdapter {
-    // PlotSquared API 实现
-}
 ```
 
-**优势**:
-- ✅ 易于添加新插件支持
-- ✅ 插件间互不干扰
-- ✅ 运行时动态检测可用插件
-- ✅ 编译期依赖，性能优秀
+实现：WorldGuard、PlotSquared、Residence、GriefDefender、Lands、Towny。
+`RegionAdapterManager#canEnter` 要求**所有已注册适配器都放行**；适配器内部抛异常时默认放行，
+但会通过 `logOnce` 记录一次警告（静默失败会让运维无从排查）。
 
-### 工会插件适配 | Guild Plugin Integration
+适配器**不是**在 `List.of(new A(), new B(), …)` 里一次性构造的：每个适配器的字节码都直接引用
+对应领地插件的类型，插件缺席时 JVM 在链接该类时会抛 `NoClassDefFoundError`，一次性构造会让
+「装着 WorldGuard 却因为没装 Residence 而一个适配器都注册不上」。因此改为按类名逐个
+`Class.forName(...).newInstance()`，把失败隔离在各自的方法里。`GuildManager` 与
+`PartyAdapterManager` 同理。`RegionGuardUtil.init` 若整体失败会打印警告，而不是静默把领地检查关掉。
 
-类似的适配器模式用于工会插件：
-
-```
-guild/
-├── GuildAdapter.java          # 接口
-├── GuildManager.java          # 管理器
-└── impl/
-    ├── GuildsPluginAdapter.java
-    ├── SimpleClansAdapter.java
-    └── FactionsUUIDAdapter.java
-```
-
----
-
-## ⚙️ 调度器抽象 | Scheduler Abstraction
-
-### 统一调度器接口
-
-为了兼容 Bukkit 和 Folia，实现了统一的调度器抽象：
+### 工会 | Guild
 
 ```java
-// Common 模块接口
-public interface SchedulerWrapper {
-    void runAsync(Runnable task);
-    void runAtEntity(Object entity, Runnable task);
-    CompletableFuture<Boolean> teleportAsync(Object entity, Object location);
-    // ...
-}
-
-// Bukkit 模块实现
-public class FoliaScheduler implements SchedulerWrapper {
-    private final FoliaLib foliaLib;
-    // FoliaLib 实现
+public interface GuildAdapter {
+    String name();
+    boolean isPresent();
+    String getGuildId(Player player);
+    boolean isSameGuild(Player a, Player b);
+    List<UUID> getGuildMembers(String guildId);
+    String getGuildName(String guildId);
+    Location getGuildHome(String guildId);
+    boolean setGuildHome(String guildId, Location location);
+    boolean isGuildAdmin(Player player);
 }
 ```
 
-**自动检测**:
-- 在 Folia 服务器上使用 FoliaLib
-- 在 Bukkit/Paper 服务器上降级到传统调度器
-- API 保持一致，无需修改业务代码
+实现：Guilds、SimpleClans、FactionsUUID，可用 `guild_config.yml` 的 `plugins` 列表过滤。
+
+### 组队 | Party
+
+`PartyAdapter` 只保留纯组队插件（Parties、BetterTeams）；工会插件已迁到 `guild` 包。
+未检测到外部插件时回退到内置组队系统（`PartyManager` + `PartyCommand`）。
 
 ---
 
-## 💾 数据管理 | Data Management
+## 💾 数据管理 | Data
 
-### 数据存储层
+所有数据都是 YAML 文件，位于 `plugins/NovaTeleport/`：
 
-```
-DataStore
-├── Home 数据
-├── Warp 数据
-├── Guild Warp 数据
-├── Toll Warp 数据
-└── Player 数据
-```
+| 数据 | 位置 | 写入方 |
+|---|---|---|
+| 家 | `data/homes.yml` | `DataStore` |
+| 公共传送点 | `data/warps.yml` | `DataStore` |
+| 玩家级数据（/back、死亡点、石碑解锁、动画风格） | `data/players/<uuid>.yml` | `DataStore`（统一入口） |
+| 传送日志 | `data/teleport_logs.yml` | `TeleportLogManager` |
+| 离线传送队列 | `data/offline.yml` | `OfflineTeleportManager` |
+| 已激活传送门 | `data/portals_state.yml` | `PortalManager` |
+| 石碑索引 | `data/steles_index.yml` | `SteleManager` |
+| 工会传送点 | `guild_warps.yml` | `GuildWarpManager` |
+| 付费传送点 | `toll_warps.yml` | `TollWarpManager` |
 
-**存储方式**:
-- SQLite（本地）
-- MySQL（可选，跨服数据）
-- Redis（可选，实时数据同步）
+一致性措施：
 
----
-
-## 🔄 事件系统 | Event System
-
-### 传送事件流程
-
-```
-Player Action
-    ↓
-Command Handler
-    ↓
-Permission Check
-    ↓
-Economy Check (Vault)
-    ↓
-Region Check (Adapters)
-    ↓
-Cooldown Check
-    ↓
-Teleport Countdown
-    ↓
-Movement Check
-    ↓
-Execute Teleport (Scheduler)
-    ↓
-Animation & Effects
-```
+- `DataStore#updatePlayer` 是玩家级文件的**唯一**读写入口，按 UUID 加锁串行化，
+  避免多个管理器各自 read-modify-write 导致丢数据。
+- 所有写入使用"写临时文件 + 原子替换"（`DataStore.atomicSave`），避免写一半崩溃损坏数据。
+- 传送日志只在内存中追加，每 10 秒把脏数据合并后异步落盘一次，关闭时同步落盘。
+- 家/传送点名称会被 `DataStore.normalizeName` 规范化（小写、只允许 `[a-z0-9_-]`、≤32 字符），
+  防止用户输入破坏 YAML 路径。
 
 ---
 
-## 🏗️ 依赖注入 | Dependency Injection
+## 🔄 传送流程 | Teleport Flow
 
-### 管理器初始化
+```
+命令 / 触发
+   ↓
+权限检查
+   ↓
+解析目标（本地 / 跨服 → 交给代理 Connect）
+   ↓
+记录 /back
+   ↓
+延迟 ≤ 0 ? ──是─→ 立即执行
+   │否
+   ↓
+按实体区域调度每秒倒计时（runAtEntityTimer）
+   ├─ 玩家离线 → 取消
+   └─ 移动超过 cancel_move_distance（且类型不在豁免列表）→ 取消（不扣费）
+   ↓
+执行体 execute()
+   ├─ 空间锚点校验
+   ├─ 领地校验（所有适配器）
+   ├─ 扣费（economy.costs.<type> 或调用方提供的 Payment）
+   ├─ 动画（playInstant / playPrepare）
+   ├─ 传送（Folia: teleportAsync；其他: teleport）
+   ├─ 记录传送日志
+   └─ 玩家所在区域执行后处理（失明效果、尾随粒子、脚本钩子、回调）
+```
 
-主插件类负责初始化所有管理器：
+**扣费发生在所有校验之后、传送之前**：倒计时被取消、目标不存在、领地拒绝、锚点缺失都不会扣钱。
+跨服分支（不执行本地传送）由命令层自行调用 `EconomyUtil.charge`。
+
+---
+
+## 🏗️ 主类与依赖关系 | Main class
+
+`StarTeleport` 负责按顺序构造并持有各管理器（顺序有依赖：调度器 → 语言/菜单 → 存储 → 各子系统）：
 
 ```java
-public class StarTeleport extends JavaPlugin {
-    // 调度器
-    private FoliaScheduler scheduler;
-    
-    // 功能管理器
-    private RegionAdapterManager regionManager;
+public class StarTeleport extends JavaPlugin implements Listener, CommandExecutor {
+    private SchedulerWrapper scheduler;              // FoliaScheduler
+    private LanguageManager lang;
+    private JavaMenuConfig javaMenus;
+    private TeleportLogManager teleportLogManager;
+    private DataStore dataStore;
+    private ScriptingManager scriptingManager;
+    private AnimationManager animationManager;
+    private PortalManager portalManager;
+    private RtpPoolManager rtpPoolManager;
+    private ScrollManager scrollManager;
+    private CrossServerService crossServerService;
+    private OfflineTeleportManager offlineTeleportManager;
+    private SteleManager steleManager;
+    private DeathManager deathManager;
     private GuildManager guildManager;
-    private TownyTeleportManager townyManager;
+    private GuildWarpManager guildWarpManager;
+    private TownyTeleportManager townyTeleportManager;
     private TollWarpManager tollWarpManager;
-    
-    @Override
-    public void onEnable() {
-        // 初始化顺序很重要
-        this.scheduler = new FoliaScheduler(this);
-        this.regionManager = new RegionAdapterManager(this);
-        this.guildManager = new GuildManager(this);
-        // ...
-    }
+    private PartyManager partyManager;
+    private PartyAdapterManager partyAdapterManager;
+    // ... 对应的 getter
 }
 ```
 
----
-
-## 🔐 权限系统 | Permission System
-
-### 层次化权限
-
-```
-novateleport.*
-├── novateleport.command.*
-│   ├── tpa
-│   ├── home
-│   └── warp
-├── novateleport.guild.*
-│   ├── use
-│   ├── home
-│   └── admin
-├── novateleport.towny.*
-│   ├── home
-│   └── other
-└── novateleport.toll.*
-    ├── use
-    ├── create
-    └── bypass
-```
+对外可用的入口：`getScheduler()`、`getLang()`、`getDataStore()`、`getJavaMenus()`、
+`getRegionManager()`、`getTeleportLogManager()`、`getGuildManager()`、`getTownyTeleportManager()`、
+`getTollWarpManager()`、`getPartyManager()`、`getRtpPoolManager()`、`getAnimationManager()`、
+`getScriptingManager()`、`getCrossServerService()`、`getSteleManager()`、`getOfflineTeleportManager()`。
 
 ---
 
-## 📦 包结构 | Package Structure
+## 🔐 权限 | Permissions
 
-```
-com.novamclabs/
-├── commands/          # 命令处理器
-├── util/              # 工具类
-├── region/            # 领地集成
-│   ├── RegionAdapter.java
-│   ├── RegionAdapterManager.java
-│   └── impl/          # 各领地插件适配器
-├── guild/             # 工会系统
-│   ├── GuildAdapter.java
-│   ├── GuildManager.java
-│   ├── GuildWarpManager.java
-│   └── impl/          # 各工会插件适配器
-├── towny/             # Towny 集成
-│   ├── TownyTeleportManager.java
-│   └── TownyCommand.java
-├── toll/              # 付费传送点
-│   ├── TollWarp.java
-│   ├── TollWarpManager.java
-│   └── TollWarpCommand.java
-├── scheduler/         # 调度器
-│   └── FoliaScheduler.java
-├── party/             # 组队系统
-├── animations/        # 传送动画
-├── portals/           # 传送门
-├── stele/             # 传送石碑
-└── rtp/               # 随机传送
-```
+命令权限在 `plugin.yml` 声明；`/gtp`、`/towntp`、`/tollwarp`、`/stele` 因为子命令权限不同，
+不在命令级声明权限，而是在代码中按子命令检查。家数量上限通过
+`novateleport.home.limit.<n>` 动态权限计算（显式否定的节点不计入）。
 
 ---
 
-## 🔧 配置系统 | Configuration System
+## 🧪 测试 | Testing
 
-### 多层次配置
-
-```
-config.yml              # 主配置
-├── features_config.yml # 功能开关
-├── guild_config.yml    # 工会配置
-├── toll_warps_config.yml # 付费传送点配置
-└── lang/               # 语言文件
-    ├── zh_CN.yml
-    └── en_US.yml
-```
+仓库目前**没有自动化测试**（没有 `src/test`，也没有测试依赖）；发布流程只做 `mvn package`。
+任何改动都应以实际服务端验证为准。
 
 ---
 
-## 🚀 性能优化 | Performance Optimization
+## ⚠️ 已知限制 | Known limitations
 
-### 1. 移除反射
-- 使用编译期依赖替代运行时反射
-- 性能提升 10 倍
-
-### 2. 异步处理
-- 数据库操作异步化
-- 网络请求异步化
-
-### 3. 缓存机制
-- 权限检查结果缓存
-- 配置数据缓存
-- 领地查询缓存
-
-### 4. Folia 优化
-- 实体操作在实体调度器执行
-- 区域操作在区域调度器执行
-- 避免跨线程访问
-
----
-
-## 🔄 扩展性 | Extensibility
-
-### 添加新领地插件支持
-
-1. 创建适配器类实现 `RegionAdapter`
-2. 在 `RegionAdapterManager` 中注册
-3. 添加 Maven 依赖
-4. 完成！
-
-```java
-public class NewRegionAdapter implements RegionAdapter {
-    @Override
-    public String name() {
-        return "NewRegion";
-    }
-    
-    @Override
-    public boolean isPresent() {
-        return Bukkit.getPluginManager().getPlugin("NewRegion") != null;
-    }
-    
-    @Override
-    public boolean canEnter(Player p, Location dest) {
-        // 实现检查逻辑
-        return true;
-    }
-}
-```
-
----
-
-## 🧪 测试策略 | Testing Strategy
-
-### 单元测试
-- 核心逻辑单元测试
-- 工具类测试
-- 配置解析测试
-
-### 集成测试
-- 插件加载测试
-- 命令执行测试
-- 权限检查测试
-
-### 性能测试
-- 并发传送测试
-- 大量玩家测试
-- 内存泄漏检查
-
----
-
-## 📊 监控与日志 | Monitoring & Logging
-
-### 日志级别
-
-```
-INFO    - 正常运行信息
-WARNING - 警告信息（不影响运行）
-SEVERE  - 严重错误
-DEBUG   - 调试信息（需开启）
-```
-
-### 关键日志点
-
-- 插件启动/关闭
-- 适配器注册
-- 传送执行
-- 经济交易
-- 错误异常
-
----
-
-## 🔐 安全性 | Security
-
-### 权限检查
-- 命令执行前权限验证
-- 传送前权限验证
-- 经济操作权限验证
-
-### 数据验证
-- 输入参数验证
-- 坐标合法性检查
-- 金额范围检查
-
-### 防御性编程
-- Try-Catch 保护关键代码
-- Null 检查
-- 类型检查
-
----
-
-## 🎯 设计原则 | Design Principles
-
-1. **单一职责** - 每个类只负责一个功能
-2. **开闭原则** - 对扩展开放，对修改关闭
-3. **里氏替换** - 适配器可互换
-4. **接口隔离** - 接口粒度合理
-5. **依赖倒置** - 依赖抽象而非实现
-
----
-
-## 🔮 未来规划 | Future Plans
-
-- [ ] 更多领地插件支持
-- [ ] Web 控制面板
-- [ ] 传送地图可视化
-- [ ] 机器学习传送优化
-- [ ] 微服务架构支持
-
----
-
-Made with ❤️ by NovaMC Labs
+- `Sqlit-Lib`（nova-storage）当前未被主插件使用，也不打进发布包。
+- `scripts/teleport.js` 只在服务器存在 JavaScript 引擎时生效（Java 15+ 已移除内置 Nashorn）。
+- 代理侧 `BungeeCore` / `Velocity` 是占位插件；跨服切换依赖代理自身处理 `BungeeCord` 通道
+  （Velocity 的 `bungee-plugin-message-channel` 默认为 `true`，无需改动）。
+- 仅支持 1.20+ 服务端：针对 spigot-api 1.20.1 编译，`api-version` 声明为 `'1.20'`，
+  同一个 jar 可在 1.20.x / 1.21.x / 26.x（26.1 / 26.1.2 / 26.2 …）加载。
+  插件为 Java 17 字节码（1.20.0–1.20.4 的服务端只要求 Java 17），
+  1.20.5+ / 1.21.x 需 Java 21、26.x 需 Java 25，均能向上兼容加载。
+  粒子常量在 1.20.5 被改名，统一走 `util/ParticleCompat` 按名字解析新旧两种写法。
+- 可点击聊天消息（`Player#spigot().sendMessage(BaseComponent...)`）依赖 `bungeecord-chat`
+  （Paper 26.2 仍随服务端提供，但已标记 deprecated），统一走 `util/ChatCompat` 并在不可用时降级为纯文本。

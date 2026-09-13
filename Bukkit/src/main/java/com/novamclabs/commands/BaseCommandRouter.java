@@ -37,12 +37,12 @@ public class BaseCommandRouter implements CommandExecutor, TabCompleter {
                 return true;
             case "debug":
                 if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
-                if (rest.length < 1) { sender.sendMessage(plugin.getLang().tr("debug.state", "state", plugin.getConfig().getBoolean("general.debug", false)?plugin.getLang().t("debug.on"):plugin.getLang().t("debug.off"))); return true; }
+                if (rest.length < 1) { sender.sendMessage(plugin.getLang().tr("debug.state", "state", plugin.isDebug()?plugin.getLang().t("debug.on"):plugin.getLang().t("debug.off"))); return true; }
                 boolean on = rest[0].equalsIgnoreCase("on") || rest[0].equalsIgnoreCase("true");
-                plugin.getConfig().set("general.debug", on);
-                plugin.saveConfig();
+                // 只改内存，不写回 config.yml —— Bukkit 的 saveConfig() 会抹掉文件里的全部注释
                 plugin.setDebug(on);
                 sender.sendMessage(on?plugin.getLang().t("debug.on"):plugin.getLang().t("debug.off"));
+                sender.sendMessage(plugin.getLang().t("debug.persist_hint"));
                 return true;
             case "tpa": return route(sender, "tpa", rest);
             case "tpahere": return route(sender, "tpahere", rest);
@@ -69,6 +69,11 @@ public class BaseCommandRouter implements CommandExecutor, TabCompleter {
             case "stele": return route(sender, "stele", rest);
             case "deathback": return route(sender, "deathback", rest);
             case "forcetp": return route(sender, "forcetp", rest);
+            case "gtp": return route(sender, "gtp", rest);
+            case "towntp": return route(sender, "towntp", rest);
+            case "tollwarp": return route(sender, "tollwarp", rest);
+            case "tplog": return route(sender, "tplog", rest);
+            case "reload": return route(sender, "stp", new String[]{"reload"});
             default:
                 sender.sendMessage(plugin.getLang().t("base.unknown"));
                 return true;
@@ -83,7 +88,7 @@ public class BaseCommandRouter implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        List<String> root = Arrays.asList("tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","homes","setwarp","warp","delwarp","warps","spawn","back","rtp","rtpgui","tpmenu","city","tpanimation","scroll","party","stele","deathback","forcetp");
+        List<String> root = Arrays.asList("tpa","tpahere","tpaccept","tpdeny","tpcancel","sethome","home","delhome","homes","setwarp","warp","delwarp","warps","spawn","back","rtp","rtpgui","tpmenu","city","tpanimation","scroll","party","stele","deathback","forcetp","gtp","towntp","tollwarp","tplog","debug","help","reload");
         if (args.length == 1) {
             List<String> out = new ArrayList<>();
             for (String s : root) if (s.startsWith(args[0].toLowerCase())) out.add(s);

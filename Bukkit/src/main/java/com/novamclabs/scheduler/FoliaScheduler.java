@@ -16,45 +16,41 @@ import java.util.concurrent.TimeUnit;
  */
 public class FoliaScheduler implements SchedulerWrapper {
     private final FoliaLib foliaLib;
-    
+
     public FoliaScheduler(JavaPlugin plugin) {
         this.foliaLib = new FoliaLib(plugin);
     }
-    
+
     @Override
     public void runNextTick(Runnable task) {
         foliaLib.getScheduler().runNextTick(wrappedTask -> task.run());
     }
-    
+
     @Override
     public void runAsync(Runnable task) {
         foliaLib.getScheduler().runAsync(wrappedTask -> task.run());
     }
-    
+
     @Override
     public ScheduledTask runLater(Runnable task, long delayTicks) {
-        WrappedTask wrapped = foliaLib.getScheduler().runLater(task, delayTicks);
-        return new FoliaScheduledTask(wrapped);
+        return new FoliaScheduledTask(foliaLib.getScheduler().runLater(task, delayTicks));
     }
-    
+
     @Override
     public ScheduledTask runLaterAsync(Runnable task, long delay, TimeUnit unit) {
-        WrappedTask wrapped = foliaLib.getScheduler().runLaterAsync(task, delay, unit);
-        return new FoliaScheduledTask(wrapped);
+        return new FoliaScheduledTask(foliaLib.getScheduler().runLaterAsync(task, delay, unit));
     }
-    
+
     @Override
     public ScheduledTask runTimer(Runnable task, long delayTicks, long periodTicks) {
-        WrappedTask wrapped = foliaLib.getScheduler().runTimer(task, delayTicks, periodTicks);
-        return new FoliaScheduledTask(wrapped);
+        return new FoliaScheduledTask(foliaLib.getScheduler().runTimer(task, delayTicks, periodTicks));
     }
-    
+
     @Override
     public ScheduledTask runTimerAsync(Runnable task, long delay, long period, TimeUnit unit) {
-        WrappedTask wrapped = foliaLib.getScheduler().runTimerAsync(task, delay, period, unit);
-        return new FoliaScheduledTask(wrapped);
+        return new FoliaScheduledTask(foliaLib.getScheduler().runTimerAsync(task, delay, period, unit));
     }
-    
+
     @Override
     public void runAtEntity(Object entity, Runnable task) {
         if (entity instanceof Entity) {
@@ -63,7 +59,7 @@ public class FoliaScheduler implements SchedulerWrapper {
             runNextTick(task);
         }
     }
-    
+
     @Override
     public void runAtLocation(Object world, int x, int y, int z, Runnable task) {
         if (world instanceof org.bukkit.World) {
@@ -73,7 +69,33 @@ public class FoliaScheduler implements SchedulerWrapper {
             runNextTick(task);
         }
     }
-    
+
+    @Override
+    public ScheduledTask runAtLocationLater(Object world, int x, int y, int z, Runnable task, long delayTicks) {
+        if (world instanceof org.bukkit.World) {
+            Location loc = new Location((org.bukkit.World) world, x, y, z);
+            return new FoliaScheduledTask(foliaLib.getScheduler().runAtLocationLater(loc, task, delayTicks));
+        }
+        return runLater(task, delayTicks);
+    }
+
+    @Override
+    public ScheduledTask runAtEntityTimer(Object entity, Runnable task, long delayTicks, long periodTicks) {
+        if (entity instanceof Entity) {
+            return new FoliaScheduledTask(foliaLib.getScheduler().runAtEntityTimer((Entity) entity, task, delayTicks, periodTicks));
+        }
+        return runTimer(task, delayTicks, periodTicks);
+    }
+
+    @Override
+    public ScheduledTask runAtLocationTimer(Object world, int x, int y, int z, Runnable task, long delayTicks, long periodTicks) {
+        if (world instanceof org.bukkit.World) {
+            Location loc = new Location((org.bukkit.World) world, x, y, z);
+            return new FoliaScheduledTask(foliaLib.getScheduler().runAtLocationTimer(loc, task, delayTicks, periodTicks));
+        }
+        return runTimer(task, delayTicks, periodTicks);
+    }
+
     @Override
     public CompletableFuture<Boolean> teleportAsync(Object entity, Object location) {
         if (entity instanceof Entity && location instanceof Location) {
@@ -81,35 +103,35 @@ public class FoliaScheduler implements SchedulerWrapper {
         }
         return CompletableFuture.completedFuture(false);
     }
-    
+
     @Override
     public void cancelAllTasks() {
         foliaLib.getScheduler().cancelAllTasks();
     }
-    
+
     @Override
     public boolean isFolia() {
         return foliaLib.isFolia();
     }
-    
+
     /**
      * FoliaLib 任务包装
      * FoliaLib task wrapper
      */
     private static class FoliaScheduledTask implements ScheduledTask {
         private final WrappedTask wrapped;
-        
+
         public FoliaScheduledTask(WrappedTask wrapped) {
             this.wrapped = wrapped;
         }
-        
+
         @Override
         public void cancel() {
             if (wrapped != null) {
                 wrapped.cancel();
             }
         }
-        
+
         @Override
         public boolean isCancelled() {
             return wrapped == null || wrapped.isCancelled();

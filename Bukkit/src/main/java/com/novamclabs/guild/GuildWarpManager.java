@@ -206,11 +206,6 @@ public class GuildWarpManager {
             return false;
         }
 
-        if (!EconomyUtil.charge(plugin, player, teleportCost)) {
-            player.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(teleportCost)));
-            return false;
-        }
-
         try {
             if (plugin.getDataStore() != null) {
                 plugin.getDataStore().setBack(player.getUniqueId(), player.getLocation());
@@ -218,7 +213,16 @@ public class GuildWarpManager {
         } catch (Exception ignored) {
         }
 
-        TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "guild",
+        // 费用在传送真正执行时扣除，避免倒计时取消后白扣
+        TeleportUtil.Payment payment = teleportCost > 0 ? p -> {
+            if (!EconomyUtil.charge(plugin, p, teleportCost)) {
+                p.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(teleportCost)));
+                return false;
+            }
+            return true;
+        } : p -> true;
+
+        TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "guild", payment,
             () -> player.sendMessage(plugin.getLang().tr("guild.teleported_to_warp", "name", warpName)));
         return true;
     }

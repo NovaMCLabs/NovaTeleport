@@ -33,7 +33,7 @@ public class GriefDefenderAdapter implements RegionAdapter {
     @Override
     public boolean canEnter(Player p, Location dest) {
         if (!isPresent()) return true;
-        
+
         try {
             Core core = GriefDefender.getCore();
             Claim claim = core.getClaimAt(dest.getWorld().getUID(), dest.getBlockX(), dest.getBlockY(), dest.getBlockZ());
@@ -42,19 +42,22 @@ public class GriefDefenderAdapter implements RegionAdapter {
                 return true;
             }
 
-            if (claim.isUserTrusted(p.getUniqueId(), TrustTypes.ACCESSOR)) {
+            // 管理员/可忽略该领地保护的玩家直接放行。
+            // 注意 "griefdefender.admin.claim.enter" 并不是 GriefDefender 的权限节点，
+            // 真实的判定入口是 User#getPlayerData()#canIgnoreClaim(Claim)。
+            com.griefdefender.api.User user = core.getUser(p.getUniqueId());
+            if (user != null && user.getPlayerData() != null
+                    && user.getPlayerData().canIgnoreClaim(claim)) {
                 return true;
             }
-            
-            // 检查管理员权限
-            // Check admin permissions
-            if (p.hasPermission("griefdefender.admin.claim.enter")) {
-                return true;
-            }
-            
-            return true;
+
+            // 只有被授予 ACCESSOR 及以上信任的玩家才能进入他人领地
+            // （GD 另有更细的 enter-claim 标志，读取它需要走完整的权限解析 API）
+            return claim.isUserTrusted(p.getUniqueId(), TrustTypes.ACCESSOR);
 
         } catch (Throwable t) {
+            // 出错时默认允许，但要留下日志便于排查
+            com.novamclabs.region.RegionAdapterManager.logOnce(name(), t);
             return true;
         }
     }

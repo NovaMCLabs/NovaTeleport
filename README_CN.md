@@ -4,7 +4,9 @@
 [![版本](https://img.shields.io/github/v/release/novamclabs/NovaTeleport)](https://github.com/novamclabs/NovaTeleport/releases)
 [![许可证](https://img.shields.io/github/license/novamclabs/NovaTeleport)](LICENSE)
 
-一个功能强大、高度可配置的 Minecraft 传送插件，支持 Spigot/Paper/Folia 服务器。
+一个功能强大、高度可配置的 Minecraft 传送插件，支持 Spigot / Paper / Folia 服务器。
+
+English: [README.md](README.md)
 
 ---
 
@@ -12,116 +14,167 @@
 
 ### 🚀 核心功能
 - **多种传送方式**: TPA、Home、Warp、RTP、Spawn、Back 等
-- **跨服传送**: 支持 BungeeCord 和 Velocity 代理
-- **Folia 兼容**: 完整支持 Folia 区域多线程
-- **经济系统**: Vault 集成，支持传送费用
-- **基岩版支持**: Floodgate/Geyser 玩家支持
+- **跨服传送**: BungeeCord / Velocity（代理侧无需安装插件）
+- **Folia 兼容**: 所有调度统一走 FoliaLib，在 Folia 上按区域线程执行
+- **经济系统**: Vault 集成，费用在传送真正执行时才扣除
+- **变量支持**: PlaceholderAPI 扩展 `%novateleport_*%`
+- **基岩版支持**: Floodgate/Geyser 玩家使用表单界面
+- **传送可取消**: 倒计时期间移动超过配置距离自动取消（不扣费）
 
 ### 🏰 领地集成
-使用编译期依赖替代反射，提供 **10倍性能提升**：
-- WorldGuard 7.x
+使用编译期依赖替代反射，适配器均为可选软依赖（按类名逐个反射加载，任一插件缺席不会影响其他适配器）：
+- WorldGuard 7.x（只检查 ENTRY 标志）
 - PlotSquared 7.x
-- Residence
+- Residence（`tp` 标志）
 - GriefDefender
-- Lands
+- Lands（`LAND_ENTER` 标志）
 - Towny
 
 ### 🎭 组队与工会
-- **BetterTeams** 组队传送
-- **Parties** 插件支持
-- **工会系统**: 支持 Guilds、SimpleClans、FactionsUUID
-  - 工会据点传送
-  - 工会传送点（每个工会最多 5 个）
-  - 工会成员批量传送
+- **内置组队系统**，以及 BetterTeams、Parties 适配
+- **工会系统**: 支持 Guilds、SimpleClans、FactionsUUID（据点传送、传送点、成员信息）
 
 ### 🏙️ Towny 城镇传送
-- 传送到自己的城镇
-- 传送到公共城镇
-- 完整的权限控制
+- 传送到自己的城镇 / 指定城镇，含费用与权限控制
 
 ### 💰 付费传送点
-- 玩家创建收费/免费公共传送点
-- 自动经济交易
-- 传送点使用统计
-- 灵活的价格配置
+- 玩家创建收费或免费的公共传送点
+- 费用按比例分给所有者、其余作为服务器收入
+- 价格上下限、每人数量上限、仅个人可用模式
 
 ### 🎨 高级功能
-- **传送动画**: 多种粒子效果和音效
-- **传送石碑**: 实体传送网络
-- **传送卷轴**: 一次性传送物品
-- **传送门**: 自定义传送门
-- **RTP 池系统**: 预生成随机传送位置
-- **离线传送**: 玩家离线时排队传送
-- **死亡回溯**: 回到死亡位置
+- **传送动画**: magic / tech / natural
+- **传送石碑**: 结构识别、激活消耗、传送费用
+- **传送卷轴**: 绑定 home/warp，使用时才消耗
+- **传送门**: 自定义框架与激活物品，激活状态持久化
+- **RTP 池系统**: 后台预生成随机传送坐标
+- **离线传送**: 玩家上线后自动执行排队传送
+- **死亡回溯**: `/deathback`，支持冷却与费用
+- **传送日志 / 回溯**: 管理员可查看并回滚他人传送
+- **跨服 TPA**: 通过 Redis 转发请求与应答（可选）
 
 ---
 
 ## 📦 安装
 
 ### 前置要求
-- **Java 17+**
-- **Spigot/Paper 1.16+** 或 **Folia**
-- **（可选）Vault** - 经济系统
-- **（可选）领地插件** - WorldGuard、PlotSquared 等
+- **服务端 Java 版本**：1.20.0–1.20.4 需 Java 17；1.20.5+ / 1.21.x 需 Java 21；26.x 需 Java 25
+- **Spigot / Paper / Folia 1.20+**，含 **1.20.x、1.21.x 与当前版本线 26.x**（26.1 / 26.1.2 / 26.2 …）
+- **（可选）Vault** — 经济系统
+- **（可选）领地/工会/城镇插件** — 见下方兼容性表
+- **（可选）Redis** — 跨服 TPA 转发（`network.redis.enabled`）
+- **（可选）Floodgate / Cumulus** — 基岩版表单
+
+> 插件针对 **spigot-api 1.20.1** 编译（`api-version: '1.20'`），只使用 1.20.1 就已存在且
+> 至今仍然稳定的 Bukkit API，因此**同一个 jar** 可在 1.20.x / 1.21.x / 26.x 上加载。
+> 插件本体是 **Java 17 字节码**：1.20.0–1.20.4 服务端只需 Java 17，
+> 1.20.5+ / 1.21.x 与 26.x 都能向上兼容加载。
+>
+> 粒子常量在 1.20.5 被整体改名，插件通过 `ParticleCompat` 在运行期解析新旧两种名字。
+
+### 已验证的第三方插件版本
+
+| 插件 | 版本 | 集成内容 |
+|------|------|----------|
+| Vault | 1.7.1 | 经济 |
+| PlaceholderAPI | 2.12.3 | `%novateleport_*%` 占位符 |
+| WorldGuard | 7.0.17 | 领地 ENTRY 标志 |
+| PlotSquared | 7.6.0 | 地皮进出权限 |
+| Residence | 2.6.x | 领地 `tp` 标志 |
+| GriefDefender | 2.1.1-SNAPSHOT | Claim 信任等级 |
+| Lands | API 8.0.0 | 领地 `LAND_ENTER` 标志 |
+| Towny | 0.103.2.6 | 领地 + 城镇传送 |
+| Guilds | 3.5.3.9 | 工会据点/传送点 |
+| SimpleClans | 2.16.0+ | 工会（宗族） |
+| FactionsUUID / SaberFactions | 4.1.9 | 工会（势力） |
+| BetterTeams | 5.1.4 | 组队 |
+| Parties | API 3.2.17 | 组队（队伍名/成员同步） |
+| Floodgate | 2.2.x | 基岩版识别 |
+| Cumulus | 1.1.2 | 基岩版表单 |
+| FoliaLib | 0.4.4 | Folia 调度（内嵌） |
+| Jedis | 6.0.0 | Redis 跨服（内嵌） |
+
+未安装的插件会被自动跳过，不会报错。
+
+#### 实测环境 | Tested against
+
+以下组合已在真实服务端启动验证过（插件加载 + 适配器注册 + 命令响应无异常）：
+
+- **Paper 1.20.1（build 196，Java 17）**——验证 Java 17 字节码在 1.20.x 线可用
+- **Paper 1.21.4（Java 21）**
+- **Paper 26.2（build 123，Java 25）+ WorldGuard 7.0.17、WorldEdit 7.4.5、Towny 0.103.2.0、
+  SimpleClans 2.19.2、BetterTeams 5.1.4、Parties 3.2.14、VaultUnlocked 2.20.2、Floodgate 2.2.5、
+  PlaceholderAPI 2.12.3**
+- **Folia 26.2（build 7，Java 25）**——启动日志确认 `[Scheduler] Folia=true`，
+  全部命令与定时任务在区域线程模型下无 `UnsupportedOperationException`
+- **粒子兼容层**——解析逻辑单独跑在 spigot-api 1.20.1 与 26.2 上，9 个粒子在两侧都解析成功
+
+Residence / Lands / FactionsUUID / GriefDefender / PlotSquared / Guilds 的适配器已按各自
+官方 API 签名逐一核对后编译（Residence 的 `getInstance()`、Lands 的 `RoleSetting`、Factions 的
+`getFPlayers()` 返回类型等历史误用已修复），但这些插件的发行包只在其官网 / SpigotMC 分发，
+无法在本仓库的验证环境中自动下载实测。
+
+其中 Residence 与 Factions 存在**两支同名血脉、API 形状相反**的情况（Residence 现代版 6.x
+vs 旧版 2.6.x；SaberFactions vs 上游 FactionsUUID）。编译期只能匹配其中一支，因此这些调用
+改为反射，运行时按实际安装的插件解析，两支都能工作。
 
 ### 安装步骤
 
-1. **下载插件**
-   - 从 [Releases](https://github.com/novamclabs/NovaTeleport/releases) 下载最新版本
-   - 选择 `NovaTeleport-Bukkit.jar`
+1. 从 [Releases](https://github.com/novamclabs/NovaTeleport/releases) 下载 `NovaTeleport-Bukkit.jar`
+2. 放入子服 `plugins/` 目录
+3. 启动服务器，生成 `plugins/NovaTeleport/` 下的默认配置
+4. 编辑配置后执行 `/stp reload`
 
-2. **安装插件**
-   ```bash
-   # 将 JAR 文件放入服务器 plugins 目录
-   cp NovaTeleport-Bukkit.jar /path/to/server/plugins/
-   ```
+#### 代理与基岩版
 
-3. **启动服务器**
-   - 首次启动将生成默认配置文件
-   - 配置文件位于 `plugins/NovaTeleport/`
-
-4. **配置插件**
-   - 编辑 `config.yml` 自定义功能
-   - 编辑 `features_config.yml` 启用高级功能
-   - 重载配置: `/stp reload`
+- **代理（跨服）**：只需把 `NovaTeleport-Bukkit.jar` 放到各子服
+  - BungeeCord：开箱即用；Velocity：无需改配置（`velocity.toml` 的 `bungee-plugin-message-channel` 默认为 `true`）
+  - `network.server_name` 必须与各子服名称一致；跨服 TPA 还需 Redis
+  - `NovaTeleport-Bungee.jar` / `NovaTeleport-Velocity.jar` 是**占位插件**，代理侧无需安装
+- **基岩版**：安装 Floodgate（+ Cumulus）后自动启用表单界面，不可用时回退为聊天菜单
+- **Folia**：`folia-supported: true`，无需额外插件
 
 ---
 
 ## ⚙️ 配置
 
-### 主配置文件
+配置文件位于 `plugins/NovaTeleport/`：
 
-**config.yml** - 基础传送设置
+| 文件 | 内容 |
+|------|------|
+| `config.yml` | 核心设置：语言、调试、世界阈值传送、命令延迟、经济、RTP 基础、动画/特效、空间锚点 |
+| `features_config.yml` | Towny 传送、传送日志与回溯 |
+| `guild_config.yml` | 工会系统 |
+| `toll_warps_config.yml` | 付费传送点 |
+| `party.yml` | 内置组队 |
+| `death.yml` | 死亡回溯 |
+| `steles.yml` | 传送石碑 |
+| `portals.yml` | 自定义传送门 |
+| `rtp.yml` | RTP 预生成池 |
+| `scrolls.yml` | 传送卷轴 |
+| `java_menus.yml` | Java 版 GUI 菜单 |
+| `langs/zh_CN.yml`、`langs/en_US.yml` | 语言文件 |
+
 ```yaml
-# 传送延迟（秒）
-delay_seconds: 3
+# config.yml 片段
+general:
+  language: zh_CN
+  debug: false
 
-# 经济系统
+commands:
+  teleport_delay_seconds: 3
+  cancel_on_move: true          # 移动则取消倒计时
+  cancel_move_distance: 2.0
+  move_cancel_exempt_types: [portal]
+  block_interactions: false
+
 economy:
-  enabled: true
+  enabled: false
   costs:
-    tpa: 10.0
-    home: 5.0
-    warp: 5.0
-```
-
-**features_config.yml** - 高级功能
-```yaml
-# Towny 城镇传送
-towny:
-  enabled: true
-  home_delay: 3
-
-# 工会系统
-guild:
-  enabled: true
-  warps:
-    max_per_guild: 5
-
-# 付费传送点
-toll_warps:
-  enabled: true
-  max_per_player: 3
+    home: 0
+    warp: 0
+    rtp: 0
+    tpa: 0
 ```
 
 详细配置说明请查看 [配置文档](docs/CONFIGURATION.md)
@@ -130,81 +183,107 @@ toll_warps:
 
 ## 📖 命令与权限
 
+以 `Bukkit/src/main/resources/plugin.yml` 为准。
+
 ### 基础传送命令
 
 | 命令 | 说明 | 权限 |
 |------|------|------|
 | `/tpa <玩家>` | 请求传送到玩家 | `novateleport.command.tpa` |
 | `/tpahere <玩家>` | 请求玩家传送到你 | `novateleport.command.tpahere` |
-| `/tpaccept` | 接受传送请求 | `novateleport.command.tpaccept` |
-| `/tpdeny` | 拒绝传送请求 | `novateleport.command.tpdeny` |
-| `/home [名称]` | 传送到家 | `novateleport.command.home` |
-| `/sethome [名称]` | 设置家 | `novateleport.command.home` |
-| `/warp [名称]` | 传送到公共传送点 | `novateleport.command.warp` |
+| `/tpaccept` / `/tpdeny` / `/tpcancel` | 接受 / 拒绝 / 取消请求 | `novateleport.command.tpaccept` 等 |
+| `/home [名称]` | 传送到家（无参数打开菜单） | `novateleport.command.home` |
+| `/sethome` / `/delhome` / `/homes` | 设置 / 删除 / 列出家 | `novateleport.command.home` |
+| `/warp [名称]` / `/warps` | 公共传送点（无参数打开菜单） | `novateleport.command.warp` |
+| `/setwarp` / `/delwarp` | 管理公共传送点 | `novateleport.command.setwarp` |
 | `/spawn` | 传送到出生点 | `novateleport.command.spawn` |
-| `/back` | 返回上一个位置 | `novateleport.command.back` |
-| `/rtp` | 随机传送 | `novateleport.command.rtp` |
+| `/back` / `/deathback` | 返回上一个位置 / 死亡地点 | `novateleport.command.back` |
+| `/rtp [now\|半径]` / `/rtpgui` | 随机传送 | `novateleport.command.rtp` |
+| `/tpmenu` | 打开传送菜单 | `novateleport.command.tpmenu` |
+| `/city`（别名 `/hub`） | 回城（本服或跨服） | `novateleport.command.spawn` |
+| `/tpanimation select <风格>` | 选择动画风格 | `novateleport.animation.select` |
+| `/scroll bind <home\|warp> <名称>` | 生成传送卷轴 | `novateleport.scroll.bind` |
+| `/party ...` | 内置组队 | `novateleport.command.party` |
 
-### Towny 命令
+### 集成命令
 
 | 命令 | 说明 | 权限 |
 |------|------|------|
 | `/towntp` | 传送到自己的城镇 | `novateleport.towny.home` |
 | `/towntp <城镇>` | 传送到指定城镇 | `novateleport.towny.other` |
-
-### 工会命令
-
-| 命令 | 说明 | 权限 |
-|------|------|------|
-| `/gtp home` | 传送到工会据点 | `novateleport.guild.home` |
-| `/gtp sethome` | 设置工会据点 | `novateleport.guild.admin` |
+| `/gtp home` / `/gtp sethome` | 工会据点传送 / 设置据点 | `novateleport.guild.home` / `novateleport.guild.admin` |
 | `/gtp warp <名称>` | 传送到工会传送点 | `novateleport.guild.warp` |
-| `/gtp setwarp <名称>` | 创建工会传送点 | `novateleport.guild.admin` |
-| `/gtp delwarp <名称>` | 删除工会传送点 | `novateleport.guild.admin` |
-| `/gtp list` | 列出工会传送点 | `novateleport.guild.use` |
+| `/gtp setwarp` / `/gtp delwarp` | 管理工会传送点 | `novateleport.guild.admin` |
+| `/gtp list` / `/gtp info` | 列表 / 工会信息 | `novateleport.guild.use` |
+| `/tollwarp list` / `/mywarps` / `/tp <名称>` | 使用付费传送点 | `novateleport.toll.use` |
+| `/tollwarp create` / `setprice` | 创建 / 改价 | `novateleport.toll.create` |
+| `/tollwarp delete <名称>` | 删除（删除他人需 `novateleport.toll.delete.others`） | `novateleport.toll.delete` |
+| `/stele list\|locate\|travel` | 传送石碑 | `novateleport.stele.use` |
+| `/stele create\|remove\|activatefor` | 管理石碑 | `novateleport.admin` |
+| `/tplog <玩家>` | 查看并回滚传送记录 | `novateleport.admin.rewind` |
+| `/forcetp <玩家> <世界> <x> <y> <z>` | 强制传送（离线排队） | `novateleport.admin` |
+| `/stp reload` | 重载配置 | `novateleport.command.reload` |
+| `/novateleport debug on\|off`（别名 `/ntp`） | 开关调试日志（仅本次运行有效） | `novateleport.admin` |
 
-### 付费传送点命令
+完整命令列表请查看 [命令文档](docs/COMMANDS.md) 与 [权限文档](docs/PERMISSIONS.md)
 
-| 命令 | 说明 | 权限 |
-|------|------|------|
-| `/tollwarp create <名称> <价格>` | 创建付费传送点 | `novateleport.toll.create` |
-| `/tollwarp tp <名称>` | 使用付费传送点 | `novateleport.toll.use` |
-| `/tollwarp list` | 列出所有传送点 | `novateleport.toll.use` |
-| `/tollwarp mywarps` | 查看自己的传送点 | `novateleport.toll.use` |
-| `/tollwarp setprice <名称> <价格>` | 修改价格 | `novateleport.toll.create` |
-| `/tollwarp delete <名称>` | 删除传送点 | `novateleport.toll.delete` |
+---
 
-完整命令列表请查看 [命令文档](docs/COMMANDS.md)
+## 🔌 API 使用
+
+```java
+StarTeleport plugin = (StarTeleport) Bukkit.getPluginManager().getPlugin("NovaTeleport");
+
+// 调度器（Bukkit / Folia 统一）
+SchedulerWrapper scheduler = plugin.getScheduler();
+scheduler.runAtEntity(player, () -> { /* 在玩家所属区域执行 */ });
+
+// 领地检查
+RegionAdapterManager regionManager = plugin.getRegionManager();
+boolean canTeleport = regionManager == null || regionManager.canEnter(player, targetLocation);
+
+// 数据存储
+DataStore store = plugin.getDataStore();
+Location home = store.getHome(player.getUniqueId(), "home");
+
+// 带倒计时 + 动画 + 扣费的传送
+TeleportUtil.delayedTeleportWithAnimation(plugin, player, targetLocation, 3, "home",
+        () -> player.sendMessage("arrived"));
+```
+
+详细说明见 [API 文档](docs/API.md) 与 [架构文档](docs/ARCHITECTURE.md)
 
 ---
 
 ## 🏗️ 从源码构建
 
 ### 前置要求
-- JDK 17+
+- JDK 25（输出字节码为 Java 17，但 `Velocity` 模块依赖的 `velocity-api 4.x` 本身是 Java 25 字节码；
+  只构建 Bukkit 模块时 JDK 21 即可）
 - Maven 3.8+
 - Git
 
-### 构建步骤
-
 ```bash
-# 克隆仓库
 git clone https://github.com/novamclabs/NovaTeleport.git
 cd NovaTeleport
-
-# 编译
-mvn clean package
-
-# 生成的 JAR 文件位于
-# Bukkit/target/NovaTeleport-Bukkit-2.0-SNAPSHOT.jar
-# target/dist/NovaTeleport-Bukkit.jar
+mvn -B clean package -DskipTests
 ```
+
+产物：
+
+```
+Bukkit/target/NovaTeleport-Bukkit-2.0-SNAPSHOT.jar      # 服务端插件（唯一必需）
+BungeeCore/target/NovaTeleport-Bungee-2.0-SNAPSHOT.jar  # 代理侧占位插件（可选）
+Velocity/target/NovaTeleport-Velocity-2.0-SNAPSHOT.jar  # 代理侧占位插件（可选）
+target/dist/                                            # 以上三个 jar 的汇总输出（Dist 模块）
+```
+
+> `BungeeCore` 与 `Velocity` 目前只是占位插件（仅打印启动日志）：跨服切换依赖服务端直接发送
+> `BungeeCord` 插件消息，代理侧无需任何代码。保留它们是为了后续需要代理侧逻辑时可直接扩展。
 
 ---
 
 ## 🤝 贡献
-
-欢迎贡献！请遵循以下步骤：
 
 1. Fork 本仓库
 2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
@@ -226,7 +305,6 @@ mvn clean package
 
 - **文档**: [docs/](docs/)
 - **Issues**: [GitHub Issues](https://github.com/novamclabs/NovaTeleport/issues)
-- **Discord**: [加入我们的 Discord](https://discord.gg/your-invite-link)
 
 ---
 

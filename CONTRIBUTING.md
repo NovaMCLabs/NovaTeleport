@@ -52,7 +52,8 @@ We welcome feature suggestions!
 
 #### 准备工作 | Prerequisites
 
-- JDK 17+
+- JDK 25（输出是 Java 17 字节码，但 `Velocity` 模块依赖的 `velocity-api 4.x` 是 Java 25 字节码，
+  低版本 javac 读不了。只构建 Bukkit 模块时 JDK 21 即可）
 - Maven 3.8+
 - Git
 - IDE（推荐 IntelliJ IDEA）
@@ -79,11 +80,8 @@ We welcome feature suggestions!
 
 4. **开发和测试**
    ```bash
-   # 编译
-   mvn clean package
-   
-   # 运行测试
-   mvn test
+   # 编译（需要 JDK 25；只构建 Bukkit 时 JDK 21 即可）
+   mvn -B clean package -DskipTests
    ```
 
 5. **提交更改**
@@ -164,8 +162,10 @@ Closes #123
 
 ```
 NovaTeleport/
-├── Common/          # 共享代码
-├── Bukkit/          # Bukkit 实现
+├── Common/          # 跨平台接口（SchedulerWrapper），无 Bukkit 依赖
+├── Sqlit-Lib/       # 独立存储库（当前未被主插件使用）
+├── ExternalPluginStubs/  # 仅编译期的第三方 API 桩
+├── Bukkit/          # 服务端插件本体
 │   ├── src/main/java/
 │   │   └── com/novamclabs/
 │   │       ├── commands/
@@ -177,8 +177,10 @@ NovaTeleport/
 │       ├── config.yml
 │       ├── plugin.yml
 │       └── ...
-├── BungeeCore/      # BungeeCord 支持
-├── Velocity/        # Velocity 支持
+├── BungeeCore/      # 代理侧占位插件
+├── Velocity/        # 代理侧占位插件
+├── Folia/           # 说明性占位模块（不打 jar）
+├── Dist/            # 汇总三个 jar 到 target/dist
 └── docs/            # 文档
 ```
 
@@ -186,37 +188,40 @@ NovaTeleport/
 
 ## 🧪 测试 | Testing
 
-### 运行测试 | Running Tests
+### 现状 | Current state
+
+项目目前**没有自动化测试**（无 `src/test` 目录，也没有测试依赖）。CI 只执行
+`mvn -B clean package -DskipTests`，因此任何改动都需要在实际服务器上手工验证。
+
+The project currently has **no automated tests** (no `src/test`, no test dependencies). CI only runs
+`mvn -B clean package -DskipTests`, so changes must be verified manually on a real server.
 
 ```bash
-# 运行所有测试
-mvn test
-
-# 运行特定测试类
-mvn test -Dtest=TestClassName
-
-# 跳过测试编译
-mvn package -DskipTests
+# 编译 | Compile
+mvn -B clean package -DskipTests
 ```
 
-### 编写测试 | Writing Tests
+### 手工验证建议 | Manual verification
 
-- 为新功能编写单元测试
-- 测试类命名: `ClassNameTest`
-- 测试方法命名: `testMethodName_condition_expectedResult`
+请在 PR 中说明你验证过的内容，例如：
+
+- 在 1.20.x / 1.21.x / 26.x 上各启动一次无报错（关注 `[RegionAdapter]`、`[Guild]`、`[Scripting]` 等日志）
+- 传送倒计时期间移动会被取消，且不扣钱
+- 领地/经济相关的分支：分别测试"允许"与"拒绝"两种情况
+
+### 新增测试 | Adding tests
+
+如果你要引入测试基础设施，请：
+
+- 在对应模块添加 `src/test/java`
+- 测试类命名 `ClassNameTest`
+- 优先测试纯逻辑（如 `DataStore.normalizeName`、`RtpPoolManager` 的候选点计算），
+  避免需要启动服务端的用例
 
 ```java
 @Test
-public void testCanEnter_playerHasPermission_returnsTrue() {
-    // Arrange
-    Player player = mock(Player.class);
-    when(player.hasPermission(anyString())).thenReturn(true);
-    
-    // Act
-    boolean result = adapter.canEnter(player, location);
-    
-    // Assert
-    assertTrue(result);
+public void normalizeName_rejectsDot_returnsNull() {
+    assertNull(DataStore.normalizeName("a.b"));
 }
 ```
 
@@ -248,10 +253,9 @@ public void testCanEnter_playerHasPermission_returnsTrue() {
 
 - [ ] 代码遵循项目规范
 - [ ] 添加了必要的注释
-- [ ] 更新了相关文档
-- [ ] 添加了单元测试
-- [ ] 所有测试通过
-- [ ] 无编译警告
+- [ ] 更新了相关文档（命令/权限/配置变更请同步 README 与 docs/）
+- [ ] `mvn -B clean package -DskipTests` 通过
+- [ ] 说明了手工验证的环境与步骤（当前没有自动化测试）
 - [ ] 提交信息符合规范
 
 ### 审查流程

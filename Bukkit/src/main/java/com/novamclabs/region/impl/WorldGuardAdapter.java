@@ -36,30 +36,18 @@ public class WorldGuardAdapter implements RegionAdapter {
     @Override
     public boolean canEnter(Player p, Location dest) {
         if (!isPresent()) return true;
-        
+
         try {
             LocalPlayer localPlayer = WorldGuardPlugin.inst().wrapPlayer(p);
             com.sk89q.worldedit.util.Location weLoc = BukkitAdapter.adapt(dest);
-            
+
             RegionContainer container = WorldGuard.getInstance().getPlatform().getRegionContainer();
             RegionQuery query = container.createQuery();
-            
-            // 检查 ENTRY 和 BUILD 标志
-            // Check ENTRY and BUILD flags
-            if (!query.testState(weLoc, localPlayer, Flags.ENTRY)) {
-                return false;
-            }
-            
-            // 可选：也检查 BUILD 标志
-            // Optional: also check BUILD flag
-            if (!query.testState(weLoc, localPlayer, Flags.BUILD)) {
-                return false;
-            }
-            
-            return true;
+
+            // 只检查 ENTRY 标志：BUILD 是建筑权限，用它拦住进入会把主城/公共区域也挡掉
+            return query.testState(weLoc, localPlayer, Flags.ENTRY);
         } catch (Throwable t) {
-            // 出错时默认允许
-            // Allow by default on error
+            com.novamclabs.region.RegionAdapterManager.logOnce(name(), t);
             return true;
         }
     }

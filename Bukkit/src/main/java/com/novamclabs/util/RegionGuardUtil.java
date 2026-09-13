@@ -21,6 +21,10 @@ public final class RegionGuardUtil {
             manager = new RegionAdapterManager(plugin);
         } catch (Throwable t) {
             manager = null;
+            // 不能静默：领地检查失效意味着传送会绕过所有领地保护
+            plugin.getLogger().log(java.util.logging.Level.WARNING,
+                    "[RegionAdapter] Region protection could not be initialised — "
+                            + "all teleports will skip region checks.", t);
         }
     }
 
@@ -30,5 +34,10 @@ public final class RegionGuardUtil {
             return true;
         }
         return m.canEnter(player, destination);
+    }
+
+    /** 当前已注册的领地适配器管理器，未初始化时为 null | null when no adapters were initialised */
+    public static RegionAdapterManager getManager() {
+        return manager;
     }
 }

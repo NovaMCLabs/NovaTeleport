@@ -183,7 +183,13 @@ public class SteleManager implements Listener {
     private boolean tryActivate(Player p) {
         String itemSpec = conf.getString("activation.item_required", "ENDER_PEARL");
         int amt = conf.getInt("activation.item_amount", 1);
-        int xp = conf.getInt("activation.xp_level_cost", 0);
+        int xp = Math.max(0, conf.getInt("activation.xp_level_cost", 0));
+
+        // 先校验经验等级，再扣除物品，避免经验不足时白扣物品
+        if (xp > 0 && p.getLevel() < xp) {
+            return false;
+        }
+
         boolean ok = true;
         if (itemSpec != null && !itemSpec.isEmpty() && amt > 0) {
             ItemStack need = ItemResolver.resolveItem(itemSpec);
@@ -200,42 +206,42 @@ public class SteleManager implements Listener {
             }
             if (remain > 0) ok = false;
         }
-        if (ok && xp > 0) {
-            if (p.getLevel() >= xp) p.setLevel(p.getLevel() - xp);
-            else ok = false;
-        }
-        return ok;
-    }
 
-    private File playerFile(UUID u) {
-        return new File(new File(plugin.getDataFolder(), "data/players"), u + ".yml");
+        if (!ok) return false;
+        if (xp > 0) p.setLevel(p.getLevel() - xp);
+        return true;
     }
 
     private boolean isUnlocked(Player p, String key) {
-        File f = playerFile(p.getUniqueId());
-        YamlConfiguration cfg = new YamlConfiguration();
-        if (f.exists()) try {
-            cfg.load(f);
-        } catch (Exception ignored) {
-        }
-        List<String> unlocked = cfg.getStringList("steles.unlocked");
-        return unlocked.contains(key);
+        return plugin.getDataStore().readPlayer(p.getUniqueId()).getStringList("steles.unlocked").contains(key);
     }
 
     private void unlock(Player p, String key) {
-        File f = playerFile(p.getUniqueId());
-        YamlConfiguration cfg = new YamlConfiguration();
-        if (f.exists()) try {
-            cfg.load(f);
-        } catch (Exception ignored) {
-        }
-        List<String> unlocked = cfg.getStringList("steles.unlocked");
-        if (!unlocked.contains(key)) unlocked.add(key);
-        cfg.set("steles.unlocked", unlocked);
-        try {
-            cfg.save(f);
-        } catch (IOException ignored) {
-        }
+        plugin.getDataStore().updatePlayer(p.getUniqueId(), cfg -> {
+            List<String> unlocked = cfg.getStringList("steles.unlocked");
+            if (!unlocked.contains(key)) {
+                unlocked.add(key);
+                cfg.set("steles.unlocked", unlocked);
+            }
+        });
+    }
+
+    /** 石碑传送费用（steles.yml: teleport_cost）| stele travel cost */
+    public com.novamclabs.util.TeleportUtil.Payment travelPayment() {
+        int xp = Math.max(0, conf.getInt("teleport_cost.xp_level_cost", 0));
+        double vault = conf.getDouble("teleport_cost.vault_cost", 0.0);
+        return player -> {
+            if (xp > 0 && player.getLevel() < xp) {
+                player.sendMessage(plugin.getLang().tr("stele.need_xp", "levels", xp));
+                return false;
+            }
+            if (vault > 0 && !com.novamclabs.util.EconomyUtil.charge(plugin, player, vault)) {
+                player.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", com.novamclabs.util.EconomyUtil.format(vault)));
+                return false;
+            }
+            if (xp > 0) player.setLevel(player.getLevel() - xp);
+            return true;
+        };
     }
 
     public void openSteleMenu(Player p) {
@@ -283,22 +289,26 @@ public class SteleManager implements Listener {
 
         Player p = (Player) e.getWhoClicked();
         p.closeInventory();
+        travelTo(p, value);
+    }
 
-        Location dest = getSteleLocation(value);
+    /** 传送到指定石碑（含费用与 /back 记录）| travel to a stele by name */
+    public boolean travelTo(Player p, String name) {
+        Location dest = getSteleLocation(name);
         if (dest == null) {
-            p.sendMessage(plugin.getLang().t("stele.none"));
-            return;
+            p.sendMessage(plugin.getLang().tr("stele.not_found", "name", name));
+            return false;
         }
-
         try {
             if (plugin.getDataStore() != null) {
                 plugin.getDataStore().setBack(p.getUniqueId(), p.getLocation());
             }
         } catch (Exception ignored) {
         }
-
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "stele", () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "stele", travelPayment(),
+                () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
+        return true;
     }
 
     private ItemStack tagAction(ItemStack it, String action, String value) {

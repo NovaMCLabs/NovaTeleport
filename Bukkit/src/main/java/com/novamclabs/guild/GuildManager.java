@@ -1,9 +1,6 @@
 package com.novamclabs.guild;
 
 import com.novamclabs.StarTeleport;
-import com.novamclabs.guild.impl.FactionsUUIDAdapter;
-import com.novamclabs.guild.impl.GuildsPluginAdapter;
-import com.novamclabs.guild.impl.SimpleClansAdapter;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -11,6 +8,8 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 
 /**
  * 工会管理器
@@ -20,6 +19,9 @@ public class GuildManager {
     private final StarTeleport plugin;
     private final List<GuildAdapter> adapters = new ArrayList<>();
 
+    /** 同一个方法的报错只输出一次 | log each failing call site once */
+    private static final Set<String> LOGGED = ConcurrentHashMap.newKeySet();
+
     private FileConfiguration config;
     private boolean enabled;
 
@@ -28,6 +30,12 @@ public class GuildManager {
         loadConfig();
         registerAdapters();
         reload();
+    }
+
+    private void logOnce(String where, Throwable t) {
+        if (!LOGGED.add(where)) return;
+        plugin.getLogger().log(Level.WARNING, "[Guild] " + where + " failed ("
+                + t.getClass().getSimpleName() + ": " + t.getMessage() + ") — further errors here are silenced.");
     }
 
     private void loadConfig() {
@@ -41,6 +49,16 @@ public class GuildManager {
         this.config = YamlConfiguration.loadConfiguration(f);
     }
 
+    /**
+     * 按类名反射构造：适配器字节码直接引用对应工会插件类型，插件缺席时 JVM 链接该类会抛
+     * NoClassDefFoundError。一次性构造会让一个缺席的插件连累其余适配器，因此逐个隔离。
+     */
+    private static final String[][] GUILD_ADAPTERS = {
+            {"Guilds", "com.novamclabs.guild.impl.GuildsPluginAdapter"},
+            {"SimpleClans", "com.novamclabs.guild.impl.SimpleClansAdapter"},
+            {"FactionsUUID", "com.novamclabs.guild.impl.FactionsUUIDAdapter"},
+    };
+
     private void registerAdapters() {
         List<String> allowed = config.getStringList("plugins");
         boolean filter = allowed != null && !allowed.isEmpty();
@@ -51,14 +69,16 @@ public class GuildManager {
             }
         }
 
-        List<GuildAdapter> candidates = List.of(
-            new GuildsPluginAdapter(),
-            new SimpleClansAdapter(),
-            new FactionsUUIDAdapter()
-        );
-
-        for (GuildAdapter adapter : candidates) {
-            if (filter && !allowSet.contains(adapter.name().toLowerCase(Locale.ROOT))) {
+        for (String[] entry : GUILD_ADAPTERS) {
+            String name = entry[0];
+            if (filter && !allowSet.contains(name.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            GuildAdapter adapter;
+            try {
+                adapter = (GuildAdapter) Class.forName(entry[1]).getDeclaredConstructor().newInstance();
+            } catch (Throwable t) {
+                // 对应插件未安装/未启用
                 continue;
             }
             try {
@@ -67,7 +87,7 @@ public class GuildManager {
                     plugin.getLogger().info("[Guild] Registered adapter: " + adapter.name());
                 }
             } catch (Throwable t) {
-                plugin.getLogger().warning("[Guild] Failed to register " + adapter.name() + ": " + t.getMessage());
+                plugin.getLogger().warning("[Guild] Failed to register " + name + ": " + t.getMessage());
             }
         }
 
@@ -97,7 +117,8 @@ public class GuildManager {
             try {
                 String guildId = adapter.getGuildId(player);
                 if (guildId != null) return guildId;
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                logOnce("getGuildId/" + adapter.name(), t);
             }
         }
         return null;
@@ -110,7 +131,8 @@ public class GuildManager {
         for (GuildAdapter adapter : adapters) {
             try {
                 if (adapter.isSameGuild(p1, p2)) return true;
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                logOnce("isSameGuild/" + adapter.name(), t);
             }
         }
         return false;
@@ -126,8 +148,9 @@ public class GuildManager {
         for (GuildAdapter adapter : adapters) {
             try {
                 List<UUID> members = adapter.getGuildMembers(guildId);
-                if (!members.isEmpty()) return members;
-            } catch (Throwable ignored) {
+                if (members != null && !members.isEmpty()) return members;
+            } catch (Throwable t) {
+                logOnce("getGuildMembers/" + adapter.name(), t);
             }
         }
         return new ArrayList<>();
@@ -144,7 +167,8 @@ public class GuildManager {
             try {
                 String name = adapter.getGuildName(guildId);
                 if (name != null) return name;
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                logOnce("getGuildName/" + adapter.name(), t);
             }
         }
         return null;
@@ -161,7 +185,8 @@ public class GuildManager {
             try {
                 Location home = adapter.getGuildHome(guildId);
                 if (home != null) return home;
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                logOnce("getGuildHome/" + adapter.name(), t);
             }
         }
         return null;
@@ -179,7 +204,8 @@ public class GuildManager {
                 if (adapter.setGuildHome(guildId, location)) {
                     return true;
                 }
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                logOnce("setGuildHome/" + adapter.name(), t);
             }
         }
         return false;
@@ -192,7 +218,8 @@ public class GuildManager {
         for (GuildAdapter adapter : adapters) {
             try {
                 if (adapter.isGuildAdmin(player)) return true;
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                logOnce("isGuildAdmin/" + adapter.name(), t);
             }
         }
         return false;

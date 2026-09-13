@@ -1,6 +1,7 @@
 package com.novamclabs.commands;
 
 import com.novamclabs.StarTeleport;
+import com.novamclabs.common.scheduler.SchedulerWrapper;
 import com.novamclabs.menu.JavaMenuConfig;
 import com.novamclabs.storage.DataStore;
 import com.novamclabs.util.BedrockUtil;
@@ -18,7 +19,6 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.permissions.PermissionAttachmentInfo;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.io.IOException;
 import java.util.*;
@@ -33,6 +33,8 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     private final JavaMenuConfig menus;
     private final NamespacedKey keyAction;
     private final NamespacedKey keyValue;
+
+    private static final long TPA_EXPIRE_MILLIS = 60_000L;
 
     private static final class MenuHolder implements InventoryHolder {
         private final String id;
@@ -63,20 +65,69 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         this.keyAction = new NamespacedKey(plugin, "menu_action");
         this.keyValue = new NamespacedKey(plugin, "menu_value");
         Bukkit.getPluginManager().registerEvents(this, plugin);
+
+        // 跨服消息处理 | cross-server message handling
+        if (plugin.getCrossServerService() != null) {
+            plugin.getCrossServerService().setHandler(this::onCrossServerMessage);
+        }
+
+        // 定期清理过期请求，避免内存中残留 | sweep expired requests
+        plugin.getScheduler().runTimer(this::sweepExpired, 600L, 600L);
     }
 
     // TPA 请求管理
     private static class TpaRequest {
         final UUID requester;
+        /** 跨服请求时请求方不在本服，无法通过 UUID 解析名字，因此显式保存 */
+        final String requesterName;
         final UUID target;
         final boolean here; // true 表示 /tpahere
         final long expireAt;
-        TpaRequest(UUID requester, UUID target, boolean here, long expireAt) {
-            this.requester = requester; this.target = target; this.here = here; this.expireAt = expireAt;
+        final boolean crossServer;
+        final String requesterServer; // 跨服时请求方所在服务器
+        TpaRequest(UUID requester, String requesterName, UUID target, boolean here, long expireAt, boolean crossServer, String requesterServer) {
+            this.requester = requester; this.requesterName = requesterName; this.target = target; this.here = here; this.expireAt = expireAt;
+            this.crossServer = crossServer; this.requesterServer = requesterServer;
         }
     }
     private final Map<UUID, TpaRequest> incoming = new ConcurrentHashMap<>(); // target -> request
     private final Map<UUID, TpaRequest> outgoing = new ConcurrentHashMap<>(); // requester -> request
+
+    /** 跨服请求被接受后，等待“换服到达”的玩家：小写名字 -> 要抵达的目标玩家 */
+    private static final class Arrival {
+        final UUID meet;
+        final long expireAt;
+        Arrival(UUID meet, long expireAt) { this.meet = meet; this.expireAt = expireAt; }
+    }
+    private final Map<String, Arrival> arrivals = new ConcurrentHashMap<>();
+
+    private void sweepExpired() {
+        long now = System.currentTimeMillis();
+        incoming.values().removeIf(r -> r.expireAt < now);
+        outgoing.values().removeIf(r -> r.expireAt < now);
+        arrivals.values().removeIf(a -> a.expireAt < now);
+    }
+
+    /**
+     * 跨服请求：对方换服到达本服后，把它送到申请者身边。
+     * 代理只能把玩家送到目标服的登录点，因此“到达后再定位”这一步由服务端完成。
+     */
+    @EventHandler
+    public void onJoin(org.bukkit.event.player.PlayerJoinEvent e) {
+        Player joined = e.getPlayer();
+        Arrival arrival = arrivals.remove(joined.getName().toLowerCase(Locale.ROOT));
+        if (arrival == null) return;
+        if (arrival.expireAt < System.currentTimeMillis()) return;
+
+        Player meet = Bukkit.getPlayer(arrival.meet);
+        if (meet == null) {
+            joined.sendMessage(plugin.getLang().t("tpa.cross.meet_offline"));
+            return;
+        }
+        try { if (store != null) store.setBack(joined.getUniqueId(), joined.getLocation()); } catch (Exception ignored) {}
+        TeleportUtil.delayedTeleportWithAnimation(plugin, joined, meet.getLocation(), 0, "tpa", () ->
+                joined.sendMessage(plugin.getLang().t("tpa.accepted.complete")));
+    }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
@@ -104,68 +155,101 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         return false;
     }
 
+    // ===== TPA =====
+
     private boolean handleTpa(CommandSender sender, String[] args, boolean here) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player requester = (Player) sender;
         if (args.length < 1) { requester.sendMessage(plugin.getLang().t(here?"usage.tpahere":"usage.tpa")); return true; }
         Player target = Bukkit.getPlayerExact(args[0]);
         if (target == null) {
-            // 尝试跨服发送请求（Redis）| try cross-server publish via Redis
-            if (plugin.getCrossServerService() != null) {
-                plugin.getCrossServerService().publishTpaRequest(args[0], requester.getName(), here);
-                requester.sendMessage(plugin.getLang().tr("tpa.sent", "target", args[0], "seconds", 60));
+            // 目标不在本服：尝试通过 Redis 转发到其所在服务器
+            if (plugin.getCrossServerService() != null && plugin.getCrossServerService().isActive()
+                    && plugin.getCrossServerService().publishTpaRequest(args[0], requester.getName(), here)) {
+                TpaRequest req = new TpaRequest(requester.getUniqueId(), requester.getName(), null, here,
+                        System.currentTimeMillis() + TPA_EXPIRE_MILLIS, true, plugin.getCrossServerService().getServerName());
+                outgoing.put(requester.getUniqueId(), req);
+                requester.sendMessage(plugin.getLang().tr("tpa.cross.sent", "target", args[0], "seconds", TPA_EXPIRE_MILLIS / 1000));
                 return true;
             }
             requester.sendMessage(plugin.getLang().t("common.no_online_player"));
-            return true; }
+            return true;
+        }
         if (target.getUniqueId().equals(requester.getUniqueId())) { requester.sendMessage(plugin.getLang().t("common.cannot_target_self")); return true; }
 
-        long expireAt = System.currentTimeMillis() + 60_000; // 60秒过期
-        TpaRequest req = new TpaRequest(requester.getUniqueId(), target.getUniqueId(), here, expireAt);
+        long expireAt = System.currentTimeMillis() + TPA_EXPIRE_MILLIS;
+        TpaRequest req = new TpaRequest(requester.getUniqueId(), requester.getName(), target.getUniqueId(), here, expireAt, false, null);
         incoming.put(target.getUniqueId(), req);
         outgoing.put(requester.getUniqueId(), req);
 
-        requester.sendMessage(plugin.getLang().tr("tpa.sent", "target", target.getName(), "seconds", 60));
-        // 提示目标 | Prompt target
-        if (com.novamclabs.util.BedrockUtil.isBedrock(target)) {
-            boolean sent = com.novamclabs.util.BedrockFormsUtil.showTpaRequestForm(plugin, target, requester.getName(), here);
-            if (!sent) {
-                target.sendMessage(plugin.getLang().tr(here?"tpa.prompt.to_here":"tpa.prompt.to_you", "requester", requester.getName()));
-            }
-        } else {
-            // Java 版：可点击消息 | Clickable chat for Java
-            net.md_5.bungee.api.chat.TextComponent yes = new net.md_5.bungee.api.chat.TextComponent(plugin.getLang().t("tpa.click.accept"));
-            yes.setColor(net.md_5.bungee.api.ChatColor.GREEN);
-            yes.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/tpaccept"));
-            net.md_5.bungee.api.chat.TextComponent no = new net.md_5.bungee.api.chat.TextComponent(plugin.getLang().t("tpa.click.deny"));
-            no.setColor(net.md_5.bungee.api.ChatColor.RED);
-            no.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/tpdeny"));
-            net.md_5.bungee.api.chat.TextComponent spacer = new net.md_5.bungee.api.chat.TextComponent(" ");
-            target.spigot().sendMessage(yes, spacer, no);
-            target.sendMessage(plugin.getLang().tr(here?"tpa.prompt.to_here":"tpa.prompt.to_you", "requester", requester.getName()));
-        }
+        requester.sendMessage(plugin.getLang().tr("tpa.sent", "target", target.getName(), "seconds", TPA_EXPIRE_MILLIS / 1000));
+        promptTarget(target, requester.getName(), here);
         return true;
+    }
+
+    /** 向目标玩家展示接受/拒绝（基岩版用表单，Java 版用可点击消息）| prompt the target */
+    private void promptTarget(Player target, String requesterName, boolean here) {
+        if (BedrockUtil.isBedrock(target)) {
+            boolean sent = com.novamclabs.util.BedrockFormsUtil.showTpaRequestForm(plugin, target, requesterName, here);
+            if (!sent) {
+                target.sendMessage(plugin.getLang().tr(here?"tpa.prompt.to_here":"tpa.prompt.to_you", "requester", requesterName));
+            }
+            return;
+        }
+        com.novamclabs.util.ChatCompat.sendAcceptDeny(target,
+                plugin.getLang().t("tpa.click.accept"), "/tpaccept",
+                plugin.getLang().t("tpa.click.deny"), "/tpdeny");
+        target.sendMessage(plugin.getLang().tr(here?"tpa.prompt.to_here":"tpa.prompt.to_you", "requester", requesterName));
     }
 
     private boolean handleTpAccept(CommandSender sender) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player target = (Player) sender;
         TpaRequest req = incoming.get(target.getUniqueId());
-        if (req == null || req.expireAt < System.currentTimeMillis()) { target.sendMessage(plugin.getLang().t("tpa.no_request")); return true; }
+        if (req == null || req.expireAt < System.currentTimeMillis()) {
+            incoming.remove(target.getUniqueId());
+            target.sendMessage(plugin.getLang().t("tpa.no_request"));
+            return true;
+        }
+
+        if (req.crossServer) {
+            incoming.remove(target.getUniqueId());
+            long expireAt = System.currentTimeMillis() + TPA_EXPIRE_MILLIS;
+            if (req.here) {
+                // /tpahere：目标需要前往请求方所在的服务器，目标就在本服，直接切服。
+                // 同时告知请求方所在服务器：该玩家到达后要送到请求者身边。
+                Map<String, String> notice = new LinkedHashMap<>();
+                notice.put("type", "tpa_arriving");
+                notice.put("arriving", target.getName());
+                notice.put("meet", req.requesterName == null ? "" : req.requesterName);
+                if (plugin.getCrossServerService() != null) plugin.getCrossServerService().publish(notice);
+                target.sendMessage(plugin.getLang().tr("tpa.cross.travel", "server", req.requesterServer));
+                // 延后 1 秒再切服：给对方服务器留出处理 Redis 通知的时间，
+                // 否则玩家可能在对方登记“等待到达”之前就已经进服，导致到达后不被送到身边。
+                plugin.getScheduler().runLater(() -> {
+                    if (target.isOnline()) com.novamclabs.util.ProxyMessenger.connect(plugin, target, req.requesterServer);
+                }, 20L);
+            } else {
+                // /tpa：请求方会前来本服，登记到达后要见的目标，并通知请求方所在服务器
+                if (req.requesterName != null && !req.requesterName.isEmpty()) {
+                    arrivals.put(req.requesterName.toLowerCase(Locale.ROOT), new Arrival(target.getUniqueId(), expireAt));
+                }
+                notifyRequesterServer("tpa_accept", req, target.getName());
+                target.sendMessage(plugin.getLang().tr("tpa.cross.accepted", "requester", req.requesterName == null ? "?" : req.requesterName));
+            }
+            return true;
+        }
+
         Player requester = Bukkit.getPlayer(req.requester);
         if (requester == null) { target.sendMessage(plugin.getLang().t("tpa.requester_offline")); cleanup(req); return true; }
 
-        // 传送对象
+        // 传送对象：/tpa 时请求方移动；/tpahere 时目标移动
         Player mover = req.here ? target : requester;
         Location dest = (req.here ? requester : target).getLocation();
-        // 经济扣费
         String actionKey = req.here ? "tpahere" : "tpa";
-        if (!ensurePaid(mover, actionKey)) {
-            return true;
-        }
         try { if (store != null) store.setBack(mover.getUniqueId(), mover.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        BukkitTask task = TeleportUtil.delayedTeleportWithAnimation(plugin, mover, dest, delay, actionKey, () -> {
+        SchedulerWrapper.ScheduledTask task = TeleportUtil.delayedTeleportWithAnimation(plugin, mover, dest, delay, actionKey, () -> {
             cleanup(req);
             mover.sendMessage(plugin.getLang().t("tpa.accepted.complete"));
         });
@@ -174,11 +258,26 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         return true;
     }
 
+    private void notifyRequesterServer(String type, TpaRequest req, String targetName) {
+        if (plugin.getCrossServerService() == null) return;
+        Map<String, String> data = new LinkedHashMap<>();
+        data.put("type", type);
+        data.put("requester", req.requesterName == null ? "" : req.requesterName);
+        data.put("target", targetName);
+        data.put("here", Boolean.toString(req.here));
+        plugin.getCrossServerService().publish(data);
+    }
+
     private boolean handleTpDeny(CommandSender sender) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player target = (Player) sender;
         TpaRequest req = incoming.remove(target.getUniqueId());
         if (req == null) { target.sendMessage(plugin.getLang().t("tpa.none_pending")); return true; }
+        if (req.crossServer) {
+            notifyRequesterServer("tpa_deny", req, target.getName());
+            target.sendMessage(plugin.getLang().t("tpa.denied.target"));
+            return true;
+        }
         Player requester = Bukkit.getPlayer(req.requester);
         if (requester != null) requester.sendMessage(plugin.getLang().tr("tpa.denied.sender", "target", target.getName()));
         outgoing.remove(req.requester);
@@ -191,45 +290,99 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         Player requester = (Player) sender;
         TpaRequest req = outgoing.remove(requester.getUniqueId());
         if (req == null) { requester.sendMessage(plugin.getLang().t("tpa.no_outgoing")); return true; }
-        incoming.remove(req.target);
-        Player target = Bukkit.getPlayer(req.target);
+        if (req.target != null) incoming.remove(req.target);
+        Player target = req.target != null ? Bukkit.getPlayer(req.target) : null;
         if (target != null) target.sendMessage(plugin.getLang().t("tpa.cancelled.target"));
         requester.sendMessage(plugin.getLang().t("tpa.cancelled.requester"));
         return true;
     }
 
     private void cleanup(TpaRequest req) {
-        incoming.remove(req.target);
+        if (req.target != null) incoming.remove(req.target);
         outgoing.remove(req.requester);
     }
 
-    // 家系统
+    /** 处理来自其他服务器的消息（已切回主线程）| handle a message relayed from another server */
+    private void onCrossServerMessage(String type, Map<String, String> data) {
+        switch (type) {
+            case "tpa": {
+                String targetName = data.get("target");
+                String requesterName = data.get("requester");
+                if (targetName == null || requesterName == null) return;
+                Player target = Bukkit.getPlayerExact(targetName);
+                if (target == null) return;
+                boolean here = Boolean.parseBoolean(data.getOrDefault("here", "false"));
+                TpaRequest req = new TpaRequest(null, requesterName, target.getUniqueId(), here,
+                        System.currentTimeMillis() + TPA_EXPIRE_MILLIS, true, data.get("server"));
+                incoming.put(target.getUniqueId(), req);
+                promptTarget(target, requesterName, here);
+                break;
+            }
+            case "tpa_arriving": {
+                // 另一台服务器上的玩家即将换到本服，到达后应被送到 meetPlayer 身边
+                String arriving = data.get("arriving");
+                String meetName = data.get("meet");
+                if (arriving == null || arriving.isEmpty() || meetName == null || meetName.isEmpty()) return;
+                Player meet = Bukkit.getPlayerExact(meetName);
+                if (meet == null) return;
+                arrivals.put(arriving.toLowerCase(Locale.ROOT),
+                        new Arrival(meet.getUniqueId(), System.currentTimeMillis() + TPA_EXPIRE_MILLIS));
+                break;
+            }
+            case "tpa_accept": {
+                String requesterName = data.get("requester");
+                if (requesterName == null || requesterName.isEmpty()) return;
+                Player requester = Bukkit.getPlayerExact(requesterName);
+                if (requester == null) return;
+                // 只处理确实由本服发起的跨服请求，避免响应伪造的 Redis 消息
+                TpaRequest pending = outgoing.get(requester.getUniqueId());
+                if (pending == null || !pending.crossServer) return;
+                outgoing.remove(requester.getUniqueId());
+                String targetServer = data.get("server");
+                if (targetServer == null || targetServer.isEmpty()) return;
+                requester.sendMessage(plugin.getLang().tr("tpa.cross.travel", "server", targetServer));
+                com.novamclabs.util.ProxyMessenger.connect(plugin, requester, targetServer);
+                break;
+            }
+            case "tpa_deny": {
+                String requesterName = data.get("requester");
+                if (requesterName == null || requesterName.isEmpty()) return;
+                Player requester = Bukkit.getPlayerExact(requesterName);
+                if (requester == null) return;
+                TpaRequest pending = outgoing.get(requester.getUniqueId());
+                if (pending == null || !pending.crossServer) return;
+                outgoing.remove(requester.getUniqueId());
+                requester.sendMessage(plugin.getLang().tr("tpa.cross.denied", "target", data.getOrDefault("target", "?")));
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    // ===== 家系统 | homes =====
+
     private boolean handleSetHome(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
-        String name = args.length >= 1 ? args[0] : "home";
+        String raw = args.length >= 1 ? args[0] : "home";
+        String name = DataStore.normalizeName(raw);
+        if (name == null) { p.sendMessage(plugin.getLang().tr("homes.invalid_name", "name", raw)); return true; }
         int limit = getHomeLimit(p);
         List<String> current = store.listHomes(p.getUniqueId());
-        if (!current.contains(name.toLowerCase(Locale.ROOT)) && current.size() >= limit) {
+        if (!current.contains(name) && current.size() >= limit) {
             p.sendMessage(plugin.getLang().tr("homes.limit_reached", "limit", limit));
             return true;
         }
-        try { store.setHome(p.getUniqueId(), name, p.getLocation()); } catch (IOException e) { p.sendMessage(plugin.getLang().t("common.save_failed")); return true; }
+        try { store.setHome(p.getUniqueId(), name, p.getLocation()); } catch (IllegalArgumentException e) {
+            p.sendMessage(plugin.getLang().tr("homes.invalid_name", "name", raw)); return true;
+        } catch (IOException e) { p.sendMessage(plugin.getLang().t("common.save_failed")); return true; }
         p.sendMessage(plugin.getLang().tr("homes.set", "name", name));
         return true;
     }
 
     private int getHomeLimit(Player p) {
-        // 根据权限 novateleport.home.limit.X 取最大X
-        int def = plugin.getConfig().getInt("homes.default_limit", 1);
-        int max = def;
-        for (PermissionAttachmentInfo pi : p.getEffectivePermissions()) {
-            String perm = pi.getPermission().toLowerCase(Locale.ROOT);
-            if (perm.startsWith("novateleport.home.limit.")) {
-                try { int v = Integer.parseInt(perm.substring("novateleport.home.limit.".length())); max = Math.max(max, v);} catch (Exception ignored) {}
-            }
-        }
-        return max;
+        return com.novamclabs.util.HomeLimitUtil.getHomeLimit(plugin, p);
     }
 
     private boolean handleHome(CommandSender sender, String[] args) {
@@ -239,26 +392,37 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (args.length == 0) {
             return handleHomes(sender);
         }
-        String name = args[0];
-        com.novamclabs.storage.DataStore.Destination dest = store.getHomeDest(p.getUniqueId(), name);
-        if (dest == null || dest.location == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
-        if (!ensurePaid(p, "home")) { return true; }
-        try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
-        String myServer = plugin.getConfig().getString("network.server_name", "local");
-        if (dest.server != null && !dest.server.equalsIgnoreCase(myServer)) {
+        String name = DataStore.normalizeName(args[0]);
+        if (name == null) { p.sendMessage(plugin.getLang().tr("homes.invalid_name", "name", args[0])); return true; }
+        DataStore.Destination dest = store.getHomeDest(p.getUniqueId(), name);
+        if (dest == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
+
+        // 跨服家：记录的目标服务器不是本服，交给代理切服（本地无法校验该世界的存在性）
+        if (isRemoteServer(dest.server)) {
+            if (!ensurePaid(p, "home")) return true;
             com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server);
             p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
             return true;
         }
+        if (dest.location == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
+        try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, "home", () -> p.sendMessage(plugin.getLang().t("homes.welcome")));
         return true;
     }
 
+    /** 目标服务器不是本服 | whether the stored destination lives on another server */
+    private boolean isRemoteServer(String server) {
+        if (server == null) return false;
+        String myServer = plugin.getConfig().getString("network.server_name", "local");
+        return !server.equalsIgnoreCase(myServer);
+    }
+
     private boolean handleDelHome(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
-        String name = args.length >= 1 ? args[0] : "home";
+        String name = DataStore.normalizeName(args.length >= 1 ? args[0] : "home");
+        if (name == null) { p.sendMessage(plugin.getLang().tr("homes.invalid_name", "name", args[0])); return true; }
         try { store.delHome(p.getUniqueId(), name); } catch (IOException e) { p.sendMessage(plugin.getLang().t("common.delete_failed")); return true; }
         p.sendMessage(plugin.getLang().tr("homes.deleted", "name", name));
         return true;
@@ -282,14 +446,18 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         return true;
     }
 
-    // 传送点
+    // ===== 传送点 | warps =====
+
     private boolean handleSetWarp(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
-        if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
+        if (!sender.hasPermission("novateleport.command.setwarp")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
         Player p = (Player) sender;
         if (args.length < 1) { p.sendMessage(plugin.getLang().t("usage.setwarp")); return true; }
-        String name = args[0];
-        try { store.setWarp(name, p.getLocation()); } catch (IOException e) { p.sendMessage(plugin.getLang().t("common.save_failed")); return true; }
+        String name = DataStore.normalizeName(args[0]);
+        if (name == null) { p.sendMessage(plugin.getLang().tr("warps.invalid_name", "name", args[0])); return true; }
+        try { store.setWarp(name, p.getLocation()); } catch (IllegalArgumentException e) {
+            p.sendMessage(plugin.getLang().tr("warps.invalid_name", "name", args[0])); return true;
+        } catch (IOException e) { p.sendMessage(plugin.getLang().t("common.save_failed")); return true; }
         p.sendMessage(plugin.getLang().tr("warps.set", "name", name));
         return true;
     }
@@ -298,26 +466,30 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         if (args.length < 1) { return handleWarps(sender); }
-        String name = args[0];
-        com.novamclabs.storage.DataStore.Destination dest = store.getWarpDest(name);
-        if (dest == null || dest.location == null) { p.sendMessage(plugin.getLang().tr("warps.not_found", "name", name)); return true; }
-        if (!ensurePaid(p, "warp")) { return true; }
-        try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
-        String myServer = plugin.getConfig().getString("network.server_name", "local");
-        if (dest.server != null && !dest.server.equalsIgnoreCase(myServer)) {
+        String name = DataStore.normalizeName(args[0]);
+        if (name == null) { p.sendMessage(plugin.getLang().tr("warps.invalid_name", "name", args[0])); return true; }
+        DataStore.Destination dest = store.getWarpDest(name);
+        if (dest == null) { p.sendMessage(plugin.getLang().tr("warps.not_found", "name", name)); return true; }
+
+        // 跨服传送点：目标服务器不是本服，交给代理切服
+        if (isRemoteServer(dest.server)) {
+            if (!ensurePaid(p, "warp")) return true;
             com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server);
             p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
             return true;
         }
+        if (dest.location == null) { p.sendMessage(plugin.getLang().tr("warps.not_found", "name", name)); return true; }
+        try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, "warp", () -> p.sendMessage(plugin.getLang().tr("warps.arrived", "name", name)));
         return true;
     }
 
     private boolean handleDelWarp(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
+        if (!sender.hasPermission("novateleport.command.setwarp")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
         if (args.length < 1) { sender.sendMessage(plugin.getLang().t("usage.delwarp")); return true; }
-        String name = args[0];
+        String name = DataStore.normalizeName(args[0]);
+        if (name == null) { sender.sendMessage(plugin.getLang().tr("warps.invalid_name", "name", args[0])); return true; }
         try { store.delWarp(name); } catch (IOException e) { sender.sendMessage(plugin.getLang().t("common.delete_failed")); return true; }
         sender.sendMessage(plugin.getLang().tr("warps.deleted", "name", name));
         return true;
@@ -344,7 +516,6 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         Location loc = p.getWorld().getSpawnLocation();
-        if (!ensurePaid(p, "spawn")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, "spawn", () -> p.sendMessage(plugin.getLang().t("spawn.done")));
@@ -356,7 +527,6 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         Player p = (Player) sender;
         Location back = store.getBack(p.getUniqueId());
         if (back == null) { p.sendMessage(plugin.getLang().t("back.none")); return true; }
-        if (!ensurePaid(p, "back")) { return true; }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, back, delay, "back", () -> p.sendMessage(plugin.getLang().t("back.done")));
         return true;
@@ -370,6 +540,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         }
         // /rtp now | /rtp start | /rtp <radius>
         World world = p.getWorld();
+        int maxRadius = com.novamclabs.util.RTPUtil.loadSettings(plugin, world).radius;
         int radius = -1;
         if (args.length >= 1) {
             if (args[0].equalsIgnoreCase("now") || args[0].equalsIgnoreCase("start")) {
@@ -378,6 +549,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 try { radius = Integer.parseInt(args[0]); } catch (Exception ignored) {}
             }
         }
+        if (radius > maxRadius) radius = maxRadius;
         Location dest = null;
         if (radius > 0) {
             dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random(), radius);
@@ -389,7 +561,6 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random());
         }
         if (dest == null) { p.sendMessage(plugin.getLang().t("rtp.no_safe")); return true; }
-        if (!ensurePaid(p, "rtp")) { return true; }
         try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp", () -> p.sendMessage(plugin.getLang().t("rtp.done")));
@@ -411,7 +582,6 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 if (dest == null) {
                     p.sendMessage(plugin.getLang().t("rtp.no_safe"));
                 } else {
-                    if (!ensurePaid(p, "rtp")) return;
                     try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
                     int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
                     com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp", () -> p.sendMessage(plugin.getLang().t("rtp.done")));
@@ -531,6 +701,10 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         return it;
     }
 
+    /**
+     * 立即扣费。仅用于“不走本地传送”的分支（跨服切换），
+     * 本地传送的费用由 TeleportUtil 在真正传送时扣除。
+     */
     private boolean ensurePaid(Player p, String actionKey) {
         double cost = com.novamclabs.util.EconomyUtil.getCost(plugin, actionKey);
         if (!com.novamclabs.util.EconomyUtil.charge(plugin, p, cost)) {
@@ -608,7 +782,6 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                     p.sendMessage(plugin.getLang().t("rtp.no_safe"));
                     return;
                 }
-                if (!ensurePaid(p, "rtp")) return;
                 try {
                     store.setBack(p.getUniqueId(), p.getLocation());
                 } catch (Exception ignored) {
@@ -617,6 +790,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp",
                     () -> p.sendMessage(plugin.getLang().t("rtp.done")));
             }
+            default -> { }
         }
     }
 
@@ -627,7 +801,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
         // 清理 TPA 请求，避免离线后残留 | cleanup requests on quit
         TpaRequest outgoingReq = outgoing.remove(uuid);
-        if (outgoingReq != null) {
+        if (outgoingReq != null && outgoingReq.target != null) {
             incoming.remove(outgoingReq.target);
         }
 

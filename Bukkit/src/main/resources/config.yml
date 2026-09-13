@@ -39,6 +39,14 @@ auto_world_teleport:
 # 指令统一延迟（秒）
 commands:
   teleport_delay_seconds: 3
+  # 倒计时期间移动超过 cancel_move_distance 格则取消传送（传送门进入即传送，需豁免）
+  cancel_on_move: true
+  cancel_move_distance: 2.0
+  # 不因移动而取消的传送类型
+  move_cancel_exempt_types:
+    - portal
+  # 倒计时期间是否禁止交互/破坏/放置
+  block_interactions: false
 
 # 显示设置 | Display settings
 # 建议默认使用 TITLE（Java/基岩版都原生支持）
@@ -151,6 +159,7 @@ economy:
   # 拥有该权限将免除一切费用
   bypass_permission: novateleport.economy.bypass
   # 各类操作费用（0 表示免费）
+  # 键名与传送类型一致，费用在传送真正执行时才扣除，倒计时被取消不会扣钱
   costs:
     auto_world_teleport: 0
     home: 0
@@ -160,3 +169,13 @@ economy:
     rtp: 0
     tpa: 0
     tpahere: 0
+    deathback: 0
+    city: 0
+    party: 0
+    scroll: 0
+    portal: 0
+    stele: 0
+    guild: 0
+    towny: 0
+    tollwarp: 0
+    rewind: 0

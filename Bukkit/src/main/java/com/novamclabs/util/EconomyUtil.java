@@ -98,19 +98,19 @@ public class EconomyUtil {
     }
 
     /**
-     * 存款/给予金钱
-     * Deposit money to player account
+     * 存款/给予金钱（支持离线玩家）
+     * Deposit money to a player account (offline players supported)
      */
-    public static boolean deposit(StarTeleport plugin, Player player, double amount) {
+    public static boolean deposit(StarTeleport plugin, OfflinePlayer player, double amount) {
         if (!isEnabled(plugin)) return true;
         if (amount <= 0) return true;
         if (!hasProvider()) return true;
-        
+
         try {
             EconomyResponse response = econProvider.depositPlayer(player, amount);
             return response.transactionSuccess();
         } catch (Throwable t) {
-            plugin.getLogger().warning("[Economy] Error depositing to player " + player.getName() + ": " + t.getMessage());
+            plugin.getLogger().warning("[Economy] Error depositing to " + player.getName() + ": " + t.getMessage());
             return false;
         }
     }

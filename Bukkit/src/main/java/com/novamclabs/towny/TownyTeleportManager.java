@@ -82,11 +82,6 @@ public class TownyTeleportManager {
                 return false;
             }
 
-            if (!EconomyUtil.charge(plugin, player, homeCost)) {
-                player.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(homeCost)));
-                return false;
-            }
-
             try {
                 if (plugin.getDataStore() != null) {
                     plugin.getDataStore().setBack(player.getUniqueId(), player.getLocation());
@@ -94,7 +89,8 @@ public class TownyTeleportManager {
             } catch (Exception ignored) {
             }
 
-            TeleportUtil.delayedTeleportWithAnimation(plugin, player, spawnLoc, homeDelay, "towny", () ->
+            TeleportUtil.delayedTeleportWithAnimation(plugin, player, spawnLoc, homeDelay, "towny",
+                costPayment(homeCost), () ->
                 player.sendMessage(plugin.getLang().tr("towny.teleported_to_town", "town", town.getName())));
 
             return true;
@@ -103,6 +99,18 @@ public class TownyTeleportManager {
             plugin.getLogger().warning("[Towny] Error teleporting player: " + t.getMessage());
             return false;
         }
+    }
+
+    /** 生成一个在传送时扣费的 Payment | build a Payment charged at teleport time */
+    private TeleportUtil.Payment costPayment(double cost) {
+        if (cost <= 0) return p -> true;
+        return p -> {
+            if (!EconomyUtil.charge(plugin, p, cost)) {
+                p.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(cost)));
+                return false;
+            }
+            return true;
+        };
     }
 
     /**
@@ -133,11 +141,6 @@ public class TownyTeleportManager {
                 return false;
             }
 
-            if (!EconomyUtil.charge(plugin, player, otherCost)) {
-                player.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(otherCost)));
-                return false;
-            }
-
             try {
                 if (plugin.getDataStore() != null) {
                     plugin.getDataStore().setBack(player.getUniqueId(), player.getLocation());
@@ -145,7 +148,8 @@ public class TownyTeleportManager {
             } catch (Exception ignored) {
             }
 
-            TeleportUtil.delayedTeleportWithAnimation(plugin, player, spawnLoc, otherDelay, "towny", () ->
+            TeleportUtil.delayedTeleportWithAnimation(plugin, player, spawnLoc, otherDelay, "towny",
+                costPayment(otherCost), () ->
                 player.sendMessage(plugin.getLang().tr("towny.teleported_to_town", "town", town.getName())));
 
             return true;

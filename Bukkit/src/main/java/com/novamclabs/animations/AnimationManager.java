@@ -1,11 +1,8 @@
 package com.novamclabs.animations;
 
 import com.novamclabs.StarTeleport;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,32 +41,18 @@ public class AnimationManager {
         Style s = styles.get(player.getUniqueId());
         if (s != null) return s;
         // 从玩家数据文件读取
-        File f = new File(new File(plugin.getDataFolder(), "data/players"), player.getUniqueId() + ".yml");
-        if (f.exists()) {
-            YamlConfiguration cfg = new YamlConfiguration();
-            try { cfg.load(f); } catch (Exception ignored) {}
-            String name = cfg.getString("animation.style");
-            if (name != null) {
-                s = Style.fromString(name, getDefaultStyle());
-                styles.put(player.getUniqueId(), s);
-                return s;
-            }
+        String name = plugin.getDataStore().getPlayerString(player.getUniqueId(), "animation.style");
+        if (name != null) {
+            s = Style.fromString(name, getDefaultStyle());
+            styles.put(player.getUniqueId(), s);
+            return s;
         }
         return getDefaultStyle();
     }
 
     public void setStyle(Player player, Style style) {
         styles.put(player.getUniqueId(), style);
-        // 写入玩家数据文件
-        File dir = new File(plugin.getDataFolder(), "data/players");
-        if (!dir.exists()) dir.mkdirs();
-        File f = new File(dir, player.getUniqueId() + ".yml");
-        YamlConfiguration cfg = new YamlConfiguration();
-        if (f.exists()) {
-            try { cfg.load(f);} catch (Exception ignored) {}
-        }
-        cfg.set("animation.style", style.key());
-        try { cfg.save(f);} catch (IOException ignored) {}
+        plugin.getDataStore().setPlayerValue(player.getUniqueId(), "animation.style", style.key());
     }
 
     public Style getDefaultStyle() {

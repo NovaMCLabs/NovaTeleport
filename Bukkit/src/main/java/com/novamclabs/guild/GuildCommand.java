@@ -62,6 +62,10 @@ public class GuildCommand implements CommandExecutor, TabCompleter {
                 return setHQ(player);
 
             case "warp":
+                if (!player.hasPermission("novateleport.guild.warp")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 if (args.length < 2) {
                     player.sendMessage(plugin.getLang().t("guild.usage_warp"));
                     return true;
@@ -69,6 +73,10 @@ public class GuildCommand implements CommandExecutor, TabCompleter {
                 return warpManager.teleportToWarp(player, args[1]);
 
             case "setwarp":
+                if (!player.hasPermission("novateleport.guild.admin")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 if (args.length < 2) {
                     player.sendMessage(plugin.getLang().t("guild.usage_setwarp"));
                     return true;
@@ -76,6 +84,10 @@ public class GuildCommand implements CommandExecutor, TabCompleter {
                 return warpManager.createWarp(player, args[1]);
 
             case "delwarp":
+                if (!player.hasPermission("novateleport.guild.admin")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 if (args.length < 2) {
                     player.sendMessage(plugin.getLang().t("guild.usage_delwarp"));
                     return true;
@@ -84,9 +96,17 @@ public class GuildCommand implements CommandExecutor, TabCompleter {
 
             case "list":
             case "warps":
+                if (!player.hasPermission("novateleport.guild.use")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 return listWarps(player);
 
             case "info":
+                if (!player.hasPermission("novateleport.guild.use")) {
+                    player.sendMessage(plugin.getLang().t("command.no_permission"));
+                    return true;
+                }
                 return showGuildInfo(player);
 
             default:
@@ -114,10 +134,6 @@ public class GuildCommand implements CommandExecutor, TabCompleter {
         }
 
         double cost = cfg.getDouble("headquarters.cost", 0.0);
-        if (!EconomyUtil.charge(plugin, player, cost)) {
-            player.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(cost)));
-            return true;
-        }
 
         int delay = cfg.getInt("headquarters.delay", 5);
         try {
@@ -127,7 +143,16 @@ public class GuildCommand implements CommandExecutor, TabCompleter {
         } catch (Exception ignored) {
         }
 
-        TeleportUtil.delayedTeleportWithAnimation(plugin, player, home, delay, "guild", () ->
+        // 费用在传送真正执行时扣除 | charge at teleport time
+        TeleportUtil.Payment payment = cost > 0 ? p -> {
+            if (!EconomyUtil.charge(plugin, p, cost)) {
+                p.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(cost)));
+                return false;
+            }
+            return true;
+        } : p -> true;
+
+        TeleportUtil.delayedTeleportWithAnimation(plugin, player, home, delay, "guild", payment, () ->
             player.sendMessage(plugin.getLang().t("guild.teleported_to_hq")));
 
         return true;

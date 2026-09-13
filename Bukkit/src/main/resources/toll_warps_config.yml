@@ -2,7 +2,6 @@
 # Toll warps configuration
 
 # 是否启用付费传送点系统
-# Enable toll warp system
 enabled: true
 
 # 模式：
@@ -25,21 +24,3 @@ allow_free: true
 
 # 传送延迟（秒）
 teleport_delay_seconds: 3
-
-# 传送点过期时间（天数，0 表示永不过期）
-expiration_days: 0
-
-# GUI 设置（若未启用自定义菜单文件，可作为后备）
-gui:
-  title: "公共付费传送点"
-  rows: 6
-  item:
-    material: ENDER_PEARL
-    name: "&b{name}"
-    lore:
-      - "&7Owner: &e{owner}"
-      - "&7Price: &a{price}"
-      - "&7Location: &f{world} {x}, {y}, {z}"
-      - "&7Uses: &6{usage}"
-      - ""
-      - "&eClick to teleport"

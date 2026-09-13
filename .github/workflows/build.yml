@@ -12,125 +12,142 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Set up JDK 17
+
+    # 需要 JDK 25：输出是 Java 17 字节码，但 javac 必须能读取依赖的类文件版本
+    # （velocity-api 4.x 是 Java 25，WorldGuard / BetterTeams / Lands 是 Java 21）
+    - name: Set up JDK 25
       uses: actions/setup-java@v4
       with:
-        java-version: '17'
+        java-version: '25'
         distribution: 'temurin'
         cache: maven
-        
+
     - name: Build with Maven
-      run: mvn clean package -DskipTests
-      
+      run: mvn -B clean package -DskipTests
+
     - name: Get plugin version
       id: get_version
       run: |
-        VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        VERSION=$(mvn -B help:evaluate -Dexpression=project.version -q -DforceStdout)
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
         echo "Plugin version: $VERSION"
-        
+
     - name: Upload Bukkit artifact
       uses: actions/upload-artifact@v4
       with:
         name: NovaTeleport-Bukkit-${{ steps.get_version.outputs.version }}
         path: Bukkit/target/NovaTeleport-Bukkit-${{ steps.get_version.outputs.version }}.jar
-        
+        if-no-files-found: error
+
     - name: Upload Bungee artifact
       uses: actions/upload-artifact@v4
       with:
         name: NovaTeleport-Bungee-${{ steps.get_version.outputs.version }}
         path: BungeeCore/target/NovaTeleport-Bungee-${{ steps.get_version.outputs.version }}.jar
-        
+        if-no-files-found: error
+
     - name: Upload Velocity artifact
       uses: actions/upload-artifact@v4
       with:
         name: NovaTeleport-Velocity-${{ steps.get_version.outputs.version }}
         path: Velocity/target/NovaTeleport-Velocity-${{ steps.get_version.outputs.version }}.jar
+        if-no-files-found: error
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    
+    # 只在推送 tag 时发布，避免每次 push 到 main 都覆盖同一个 release
+    if: startsWith(github.ref, 'refs/tags/v')
+
     permissions:
       contents: write
-      
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Set up JDK 17
+
+    # 需要 JDK 25：输出是 Java 17 字节码，但 javac 必须能读取依赖的类文件版本
+    # （velocity-api 4.x 是 Java 25，WorldGuard / BetterTeams / Lands 是 Java 21）
+    - name: Set up JDK 25
       uses: actions/setup-java@v4
       with:
-        java-version: '17'
+        java-version: '25'
         distribution: 'temurin'
         cache: maven
-        
-    - name: Get plugin version
+
+    - name: Resolve version and tag
       id: get_version
       run: |
-        VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Plugin version: $VERSION"
-        
-        # Determine release tag
-        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          TAG=${GITHUB_REF#refs/tags/}
-        else
-          TAG="Release-$VERSION"
-        fi
-        echo "tag=$TAG" >> $GITHUB_OUTPUT
-        echo "Release tag: $TAG"
-        
-    - name: Build with Maven
-      run: mvn clean package -DskipTests
-      
+        VERSION=$(mvn -B help:evaluate -Dexpression=project.version -q -DforceStdout)
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+    # 复用 build job 的产物，避免重复执行完整的 Maven 构建
+    - name: Download Bukkit artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: NovaTeleport-Bukkit-${{ steps.get_version.outputs.version }}
+        path: dist
+
+    - name: Download Bungee artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: NovaTeleport-Bungee-${{ steps.get_version.outputs.version }}
+        path: dist
+
+    - name: Download Velocity artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: NovaTeleport-Velocity-${{ steps.get_version.outputs.version }}
+        path: dist
+
     - name: Create Release
-      id: create_release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.get_version.outputs.tag }}
         name: Release ${{ steps.get_version.outputs.version }}
         body: |
           # NovaTeleport ${{ steps.get_version.outputs.version }}
-          
+
           ## 📦 下载 | Downloads
-          
+
           - **NovaTeleport-Bukkit.jar** - Spigot/Paper/Folia 服务器
-          - **NovaTeleport-Bungee.jar** - BungeeCord 代理
-          - **NovaTeleport-Velocity.jar** - Velocity 代理
-          
+          - **NovaTeleport-Bungee.jar** - BungeeCord 代理（可选占位插件）
+          - **NovaTeleport-Velocity.jar** - Velocity 代理（可选占位插件）
+
+          > 跨服切换由服务端通过 `BungeeCord` 插件消息通道完成，代理侧无需安装插件；
+          > 使用 Velocity 时无需额外配置（`bungee-plugin-message-channel` 默认为 `true`）。
+
           ## 📝 更新内容 | What's New
-          
+
           请查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 了解详细更新内容。
-          
+
           See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for detailed changes.
-          
+
           ## 📖 文档 | Documentation
-          
+
           - [README](https://github.com/${{ github.repository }}/blob/main/README.md)
           - [配置指南 | Configuration](https://github.com/${{ github.repository }}/blob/main/docs/CONFIGURATION.md)
           - [命令参考 | Commands](https://github.com/${{ github.repository }}/blob/main/docs/COMMANDS.md)
-          
+
           ## 🐛 问题反馈 | Bug Reports
-          
+
           如果您发现任何问题，请在 [Issues](https://github.com/${{ github.repository }}/issues) 页面提交。
-          
+
           If you find any issues, please report them on the [Issues](https://github.com/${{ github.repository }}/issues) page.
-          
+
           ---
-          
+
           **构建时间 | Build Time**: ${{ github.event.head_commit.timestamp }}
           **提交 SHA | Commit SHA**: ${{ github.sha }}
         draft: false
         prerelease: ${{ contains(steps.get_version.outputs.version, 'SNAPSHOT') || contains(steps.get_version.outputs.version, 'beta') || contains(steps.get_version.outputs.version, 'alpha') }}
         files: |
-          Bukkit/target/NovaTeleport-Bukkit-${{ steps.get_version.outputs.version }}.jar
-          BungeeCore/target/NovaTeleport-Bungee-${{ steps.get_version.outputs.version }}.jar
-          Velocity/target/NovaTeleport-Velocity-${{ steps.get_version.outputs.version }}.jar
+          dist/NovaTeleport-Bukkit-${{ steps.get_version.outputs.version }}.jar
+          dist/NovaTeleport-Bungee-${{ steps.get_version.outputs.version }}.jar
+          dist/NovaTeleport-Velocity-${{ steps.get_version.outputs.version }}.jar
         token: ${{ secrets.GITHUB_TOKEN }}

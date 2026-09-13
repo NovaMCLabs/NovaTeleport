@@ -1,16 +1,23 @@
 # 死亡回溯配置（中英）Death-back configuration
 enabled: true
+
+# /deathback 冷却时间（秒，0 = 无冷却）
 cooldown_seconds: 0
+
+# /deathback 传送延迟（秒）
 teleport_delay_seconds: 5
-move_cancel: true
-restrict_interact: true
-auto_prompt:
-  bedrock: true
-  java: true
-use_bossbar: false
+
+# 费用（0 = 免费）
 cost:
   vault: 0
   xp_levels: 0
+
+# 重生后是否提示回到死亡点
+# auto_prompt: 提示开关；auto_random: 重生后随机传送
+auto_prompt:
+  bedrock: true
+  java: true
+
 auto_random:
   enabled: false
   world: ""

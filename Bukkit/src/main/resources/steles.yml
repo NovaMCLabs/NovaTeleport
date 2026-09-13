@@ -1,35 +1,18 @@
 # 传送石碑配置（中英）Teleportation Steles configuration
 enabled: true
 
+# 激活石碑的消耗
 activation:
   item_required: "ENDER_PEARL"
   item_amount: 1
   xp_level_cost: 5
 
+# 每次使用石碑传送的消耗
 teleport_cost:
   xp_level_cost: 1
   vault_cost: 100
 
-natural_spawning:
-  enabled: false
-  chance_per_chunk: 0.001
-  allowed_biomes:
-    - "PLAINS"
-    - "FOREST"
-    - "DESERT"
-
-player_crafting:
-  enabled: true
-  core_recipe:
-    shape:
-      - "E L E"
-      - "L N L"
-      - "E L E"
-    ingredients:
-      E: "ENDER_EYE"
-      L: "LODESTONE"
-      N: "NETHER_STAR"
-
+# 结构定义：以 core_block 为中心，按 frame 中的相对坐标校验外圈方块
 structures:
   default_ruin:
     name: "远古石碑"

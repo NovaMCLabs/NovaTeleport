@@ -55,6 +55,8 @@ public class PartyManager {
     public int getMaxMembers() { return maxMembers; }
     public int getInviteExpireSeconds() { return inviteExpireSeconds; }
     public int getTeleportDelay() { return teleportDelay; }
+    public String getLeaderPrefix() { return leaderPrefix; }
+    public String getMemberPrefix() { return memberPrefix; }
 
     public boolean hasParty(UUID uuid) { return byMember.containsKey(uuid); }
     public Party getParty(UUID uuid) { return byMember.get(uuid); }
@@ -118,7 +120,10 @@ public class PartyManager {
             Player pl = Bukkit.getPlayer(u);
             if (pl == null) continue;
             if (u.equals(p.leader)) tl.addEntry(pl.getName()); else tm.addEntry(pl.getName());
-            pl.setScoreboard(sb);
+            // Player#setScoreboard 会触碰玩家状态，Folia 上必须在该玩家所属区域执行
+            if (pl.getScoreboard() != sb) plugin.getScheduler().runAtEntity(pl, () -> {
+                if (pl.isOnline() && pl.getScoreboard() != sb) pl.setScoreboard(sb);
+            });
         }
     }
 

@@ -126,18 +126,79 @@ public class GuildsPluginAdapter implements GuildAdapter {
         try {
             Guild guild = api.getGuild(player);
             if (guild == null) return false;
-            
-            GuildMember member = guild.getMember(player.getUniqueId());
-            if (member == null) return false;
-            
+
             if (guild.isMaster(player)) {
                 return true;
             }
 
-            me.glaremasters.guilds.guild.GuildRole role = member.getRole();
-            return role != null && (role.isChangeHome() || role.isPromote() || role.isKick());
+            GuildMember member = guild.getMember(player.getUniqueId());
+            if (member == null) return false;
+
+            Object role = member.getRole();
+            if (role == null) return false;
+
+            // Guilds 3.5.3.x 的 GuildRole 有 isChangeHome/isPromote/isKick 三个开关；
+            // 新版（3.5.7+）把它们换成了 hasPerm(GuildRolePerm)，直接调用会抛 NoSuchMethodError
+            // 并被外层 catch 吞掉 → 副会长全部失去权限。因此这里用反射探测，两个形态都兼容。
+            Boolean legacy = anyRoleFlag(role, "isChangeHome", "isPromote", "isKick");
+            if (legacy != null) return legacy;
+
+            Boolean modern = anyRolePerm(role, "CHANGE_HOME", "PROMOTE", "KICK");
+            if (modern != null) return modern;
+
+            // 两种形态都认不出来时只认会长：宁可少授权，不能误授权
+            return false;
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /** 旧版 GuildRole 的布尔开关，任一为 true 即视为管理员 | any legacy role flag set */
+    private Boolean anyRoleFlag(Object role, String... methodNames) {
+        boolean found = false;
+        for (String m : methodNames) {
+            try {
+                Object r = role.getClass().getMethod(m).invoke(role);
+                found = true;
+                if (Boolean.TRUE.equals(r)) return Boolean.TRUE;
+            } catch (NoSuchMethodException ignored) {
+                // 该方法在这个版本不存在
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+        return found ? Boolean.FALSE : null;
+    }
+
+    /** 新版 GuildRole#hasPerm(GuildRolePerm)，按枚举常量名探测 | modern hasPerm(GuildRolePerm) */
+    private Boolean anyRolePerm(Object role, String... permNames) {
+        Class<?> permEnum;
+        try {
+            permEnum = Class.forName("me.glaremasters.guilds.guild.GuildRolePerm");
+        } catch (Throwable t) {
+            return null;
+        }
+        java.lang.reflect.Method hasPerm;
+        try {
+            hasPerm = role.getClass().getMethod("hasPerm", permEnum);
+        } catch (Throwable t) {
+            return null;
+        }
+        boolean found = false;
+        for (String name : permNames) {
+            Object constant;
+            try {
+                constant = Enum.valueOf(permEnum.asSubclass(Enum.class), name);
+            } catch (Throwable t) {
+                continue;
+            }
+            found = true;
+            try {
+                if (Boolean.TRUE.equals(hasPerm.invoke(role, constant))) return Boolean.TRUE;
+            } catch (Throwable t) {
+                return null;
+            }
+        }
+        return found ? Boolean.FALSE : null;
     }
 }

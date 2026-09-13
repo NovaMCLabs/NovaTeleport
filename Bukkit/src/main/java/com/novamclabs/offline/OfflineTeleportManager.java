@@ -44,9 +44,19 @@ public class OfflineTeleportManager implements CommandExecutor, Listener {
         Player online = Bukkit.getPlayerExact(name);
         World w = Bukkit.getWorld(args[1]);
         if (w == null) { sender.sendMessage(plugin.getLang().tr("warn.world_not_loaded", "world", args[1])); return true; }
-        double x = Double.parseDouble(args[2]);
-        double y = Double.parseDouble(args[3]);
-        double z = Double.parseDouble(args[4]);
+        double x, y, z;
+        try {
+            x = Double.parseDouble(args[2]);
+            y = Double.parseDouble(args[3]);
+            z = Double.parseDouble(args[4]);
+        } catch (NumberFormatException e) {
+            sender.sendMessage("§cCoordinates must be numbers.");
+            return true;
+        }
+        if (!isFinite(x) || !isFinite(y) || !isFinite(z)) {
+            sender.sendMessage("§cCoordinates must be finite numbers.");
+            return true;
+        }
         Location dest = new Location(w, x, y, z);
         if (online != null) {
             online.teleport(dest);
@@ -62,6 +72,10 @@ public class OfflineTeleportManager implements CommandExecutor, Listener {
         save();
         sender.sendMessage("Queued offline teleport for "+name);
         return true;
+    }
+
+    private static boolean isFinite(double d) {
+        return !Double.isNaN(d) && !Double.isInfinite(d);
     }
 
     private UUID resolveUUID(String name) {
@@ -80,9 +94,12 @@ public class OfflineTeleportManager implements CommandExecutor, Listener {
         double x = cfg.getDouble(key+".x");
         double y = cfg.getDouble(key+".y");
         double z = cfg.getDouble(key+".z");
-        Location dest = new Location(w, x, y, z);
-        Bukkit.getScheduler().runTask(plugin, () -> p.teleport(dest));
         cfg.set(key, null);
         save();
+        Location dest = new Location(w, x, y, z);
+        // 必须在玩家所属区域线程传送（Folia 下全局线程无法操作实体）
+        plugin.getScheduler().runAtEntity(p, () -> {
+            if (p.isOnline()) p.teleport(dest);
+        });
     }
 }

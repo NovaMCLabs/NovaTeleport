@@ -20,7 +20,7 @@ Welcome to the NovaTeleport 2.0 Documentation Center!
 
 ### 其他文档 | Other Documentation
 - [常见问题](FAQ.md) - 常见问题解答
-- [语言键值](LANGUAGE_KEYS.md) - 语言文件键值参考
+- [配置速查 EN](CONFIG.md) / [CN](CONFIG_CN.md)
 
 ---
 

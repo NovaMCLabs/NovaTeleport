@@ -3,7 +3,6 @@ package com.novamclabs.stele;
 import com.novamclabs.StarTeleport;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -11,7 +10,6 @@ import org.bukkit.entity.Player;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * /stele 管理与使用指令（中英）
@@ -30,10 +28,12 @@ public class SteleCommand implements CommandExecutor {
         String sub = args[0].toLowerCase();
         switch (sub) {
             case "list": {
+                if (!requireUse(sender)) return true;
                 sender.sendMessage("Steles: " + String.join(", ", manager.listSteles()));
                 return true;
             }
             case "locate": {
+                if (!requireUse(sender)) return true;
                 if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
                 Player p = (Player) sender;
                 Location me = p.getLocation();
@@ -58,14 +58,11 @@ public class SteleCommand implements CommandExecutor {
                 manager.removeStele(args[1]); sender.sendMessage("Removed."); return true;
             }
             case "travel": {
+                if (!requireUse(sender)) return true;
                 if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
                 Player p = (Player) sender;
                 if (args.length < 2) { manager.openSteleMenu(p); return true; }
-                String name = args[1];
-                Location dest = manager.getSteleLocation(name);
-                if (dest == null) { p.sendMessage(plugin.getLang().t("warps.not_found")); return true; }
-                int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-                com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "stele", () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
+                manager.travelTo(p, args[1]);
                 return true;
             }
             case "activatefor": {
@@ -73,18 +70,26 @@ public class SteleCommand implements CommandExecutor {
                 if (args.length < 3) { sender.sendMessage("/stele activatefor <player> <key>"); return true; }
                 Player target = Bukkit.getPlayerExact(args[1]);
                 if (target == null) { sender.sendMessage(plugin.getLang().t("common.no_online_player")); return true; }
-                // 直接解锁 | unlock
-                java.io.File f = new java.io.File(new java.io.File(plugin.getDataFolder(), "data/players"), target.getUniqueId() + ".yml");
-                org.bukkit.configuration.file.YamlConfiguration cfg = new org.bukkit.configuration.file.YamlConfiguration();
-                try { if (f.exists()) cfg.load(f);} catch (Exception ignored) {}
-                java.util.List<String> unlocked = cfg.getStringList("steles.unlocked");
-                if (!unlocked.contains(args[2])) unlocked.add(args[2]);
-                cfg.set("steles.unlocked", unlocked);
-                try { cfg.save(f);} catch (Exception ignored) {}
+                final String key = args[2];
+                plugin.getDataStore().updatePlayer(target.getUniqueId(), cfg -> {
+                    java.util.List<String> unlocked = cfg.getStringList("steles.unlocked");
+                    if (!unlocked.contains(key)) {
+                        unlocked.add(key);
+                        cfg.set("steles.unlocked", unlocked);
+                    }
+                });
                 sender.sendMessage("Unlocked for " + target.getName());
                 return true;
             }
+            default:
+                sender.sendMessage("/stele list | locate | create <name> | remove <name> | travel <name>");
+                return true;
         }
-        return true;
+    }
+
+    private boolean requireUse(CommandSender sender) {
+        if (sender.hasPermission("novateleport.stele.use")) return true;
+        sender.sendMessage(plugin.getLang().t("command.no_permission"));
+        return false;
     }
 }

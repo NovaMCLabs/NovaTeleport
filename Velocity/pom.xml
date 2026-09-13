@@ -11,6 +11,18 @@
     <artifactId>NovaTeleport-Velocity</artifactId>
     <packaging>jar</packaging>
     <name>NovaTeleportProxy-Velocity</name>
+
+    <properties>
+        <!--
+          Velocity 的 API 类是 Java 25 字节码，但用 release 17 编译仍然可行：
+          release 只约束「输出字节码」与「平台 API」，不影响读取更高版本的依赖。
+          因此这里跟其他模块保持一致的目标版本，构建不再需要 JDK 25。
+          插件描述符是本模块手写的 src/main/resources/velocity-plugin.json
+          （Velocity 的注解处理器并非必需），json 必须位于 jar 根目录。
+        -->
+        <maven.compiler.release>17</maven.compiler.release>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.velocitypowered</groupId>
@@ -20,6 +32,24 @@
         </dependency>
     </dependencies>
     <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <!--
+                      关闭注解处理：velocity-api 自带的 PluginAnnotationProcessor 是 Java 25 字节码，
+                      JDK 21 上 javac 会因为读不了它而直接编译失败。
+                      本模块的描述符是手写的 src/main/resources/velocity-plugin.json（Velocity 官方支持的写法），
+                      不依赖处理器生成任何东西，因此可以安全地完全关掉。
+                    -->
+                    <proc>none</proc>
+                    <release>${maven.compiler.release}</release>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+        </plugins>
         <resources>
             <resource>
                 <directory>src/main/resources</directory>

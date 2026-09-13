@@ -2,6 +2,7 @@ package com.novamclabs.region.impl;
 
 import com.novamclabs.region.RegionAdapter;
 import com.palmergames.bukkit.towny.TownyAPI;
+import com.palmergames.bukkit.towny.object.Resident;
 import com.palmergames.bukkit.towny.object.Town;
 import com.palmergames.bukkit.towny.object.TownBlock;
 import com.palmergames.bukkit.towny.object.TownyPermission;
@@ -34,37 +35,41 @@ public class TownyAdapter implements RegionAdapter {
     @Override
     public boolean canEnter(Player p, Location dest) {
         if (!isPresent()) return true;
-        
+
         try {
             TownyAPI api = TownyAPI.getInstance();
             TownBlock townBlock = api.getTownBlock(dest);
-            
+
             if (townBlock == null) {
                 // 荒野区域，允许
                 // Wilderness area, allow
                 return true;
             }
-            
+
             Town town = townBlock.getTownOrNull();
             if (town == null) {
                 return true;
             }
-            
-            // 检查玩家是否是城镇成员
-            // Check if player is a town member
-            if (api.getResident(p) != null && api.getResident(p).hasTown()) {
-                Town playerTown = api.getResident(p).getTownOrNull();
+
+            Resident resident = api.getResident(p);
+            if (resident != null && resident.hasTown()) {
+                Town playerTown = resident.getTownOrNull();
                 if (playerTown != null && playerTown.equals(town)) {
                     return true;
                 }
             }
-            
-            // 检查是否允许外来者进入
-            // Check if outsiders can enter
+
+            // 公共城镇任何人可进入
+            if (town.isPublic()) return true;
+
+            // 私有城镇：只有在地块上具备建筑权限的玩家才允许传送进入。
+            // （Towny 没有独立的 "enter" 权限，BUILD 是社区惯例的等价判断，
+            //   因此不能对所有城镇一律套用，否则公共区域会被整体挡掉。）
             TownyPermission.ActionType action = TownyPermission.ActionType.BUILD;
             return PlayerCacheUtil.getCachePermission(p, dest, dest.getBlock().getType(), action);
-            
+
         } catch (Throwable t) {
+            com.novamclabs.region.RegionAdapterManager.logOnce(name(), t);
             return true;
         }
     }
