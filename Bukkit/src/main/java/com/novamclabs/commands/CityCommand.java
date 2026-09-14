@@ -36,8 +36,11 @@ public class CityCommand implements CommandExecutor {
             TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "city", () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
             return true;
         } else if ("proxy".equalsIgnoreCase(mode)) {
+            // 跨服分支不走 TeleportUtil，战斗标签与冷却必须在这里单独把关
+            if (!com.novamclabs.util.TeleportGates.passes(plugin, p, "city")) return true;
             String server = plugin.getConfig().getString("city.proxy.server", "hub");
             com.novamclabs.util.ProxyMessenger.connect(plugin, p, server);
+            com.novamclabs.util.TeleportGates.record(plugin, p, "city");
             p.sendMessage(plugin.getLang().tr("city.proxy", "server", server));
             return true;
         }

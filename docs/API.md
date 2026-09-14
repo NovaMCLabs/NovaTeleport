@@ -27,10 +27,13 @@ if (plugin == null) return; // not installed / not enabled
 | `plugin.getRtpPoolManager()` | `RtpPoolManager` | RTP 坐标池 |
 | `plugin.getAnimationManager()` | `AnimationManager` | 动画风格 |
 | `plugin.getCrossServerService()` | `CrossServerService` | 跨服 TPA 转发 |
+| `plugin.getCombatManager()` | `CombatManager` | 战斗标签查询（`remainingSeconds` / `isTagged`） |
+| `plugin.getCooldownManager()` | `CooldownManager` | 传送冷却查询（`remainingSeconds` / `hasCooldown`） |
 | `plugin.isDebug()` / `plugin.setDebug(boolean)` | `boolean` / `void` | 调试开关（仅本次运行） |
 
 > 注意：`getGuildManager()`、`getTownyTeleportManager()`、`getTollWarpManager()`、`getPartyManager()`
 > 在 `onEnable` 中较晚赋值，且部分只在对应命令注册成功时才创建，插件外部调用前请判空。
+> 两个玩法限制管理器同样可能为 `null`（在 `loadConfig()` 之后才创建）。
 
 ## 传送工具 | Teleport helper
 
@@ -52,6 +55,30 @@ TeleportUtil.delayedTeleportWithAnimation(plugin, player, target, 3, "stele", pa
 - `delaySeconds <= 0` 时立即传送（Folia 上会自动调度到玩家所属区域）。
 - 费用回调在传送真正执行前调用，返回 `false` 会中止传送（回调自身负责提示玩家）。
 - 返回 `SchedulerWrapper.ScheduledTask`（倒计时任务），可 `cancel()`；立即传送时返回 `null`。
+- 发起前会先做战斗标签与冷却判断（两者默认关闭），执行前会再复查一次战斗标签。
+
+## 成本模型 | Cost model
+
+```java
+import com.novamclabs.util.CostModel;
+import com.novamclabs.util.TeleportGates;
+
+// 一次性收取：先校验全部（金钱/经验/物品），全部通过才扣
+CostModel.Spec spec = CostModel.Spec.builder()
+        .money(100).xpLevels(2).build();
+CostModel.checkAndCharge(plugin, player, spec);
+
+// 作为 TeleportUtil 的 Payment 使用（spec 每次求值，支持 /stp reload 改价）
+TeleportUtil.delayedTeleportWithAnimation(plugin, player, target, 3, "home",
+        CostModel.asPayment(plugin, () -> CostModel.fromGlobal(plugin, "home")), onComplete);
+
+// 跨服分支：战斗标签 + 冷却的统一放行判断
+if (!TeleportGates.passes(plugin, player, "home")) return;
+TeleportGates.record(plugin, player, "home"); // 跨服传送发出后登记冷却
+```
+
+`CostModel.preflight` 只读校验、`apply` 才扣减；`Result.ok()` 为 false 时**不会产生部分扣减**。
+被传送流程拦下时只有金钱会退回，经验/物品不会。
 
 ## 领地检查 | Region checks
 

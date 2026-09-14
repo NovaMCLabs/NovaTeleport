@@ -3,6 +3,8 @@ package com.novamclabs.party;
 import com.novamclabs.StarTeleport;
 import com.novamclabs.party.adapter.PartyAdapter;
 import com.novamclabs.party.adapter.PartyAdapterManager;
+import com.novamclabs.util.BedrockFormsUtil;
+import com.novamclabs.util.BedrockUtil;
 import com.novamclabs.util.TeleportUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -44,6 +46,10 @@ public class PartyCommand implements CommandExecutor {
         }
         Player p = (Player) sender;
         if (args.length == 0) {
+            // 基岩版没有命令补全，改为表单列出常用操作
+            if (BedrockUtil.isBedrock(p) && showActionForm(p)) {
+                return true;
+            }
             p.sendMessage(plugin.getLang().t("party.help"));
             return true;
         }
@@ -67,7 +73,7 @@ public class PartyCommand implements CommandExecutor {
                     p.sendMessage(plugin.getLang().t("party.usage.invite"));
                     return true;
                 }
-                Player target = Bukkit.getPlayerExact(args[1]);
+                Player target = BedrockUtil.findPlayer(args[1]);
                 if (target == null) {
                     p.sendMessage(plugin.getLang().t("common.no_online_player"));
                     return true;
@@ -145,5 +151,17 @@ public class PartyCommand implements CommandExecutor {
             }
         }
         return true;
+    }
+
+    /** 常用操作的基岩版表单；按钮文字本地化，命令参数另给 | labels are localized, args are separate */
+    private boolean showActionForm(Player p) {
+        List<String> labels = Arrays.asList(
+            plugin.getLang().t("party.menu.create"),
+            plugin.getLang().t("party.menu.accept"),
+            plugin.getLang().t("party.menu.leave"),
+            plugin.getLang().t("party.menu.tp"));
+        List<String> actions = Arrays.asList("create", "accept", "leave", "tp");
+        return BedrockFormsUtil.showListCommandForm(plugin, p, plugin.getLang().t("party.menu.title"),
+            labels, actions, "party");
     }
 }

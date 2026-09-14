@@ -1,7 +1,8 @@
 package com.novamclabs.guild;
 
 import com.novamclabs.StarTeleport;
-import com.novamclabs.util.EconomyUtil;
+import com.novamclabs.util.BedrockFormsUtil;
+import com.novamclabs.util.BedrockUtil;
 import com.novamclabs.util.TeleportUtil;
 import org.bukkit.Location;
 import org.bukkit.command.Command;
@@ -67,6 +68,19 @@ public class GuildCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 if (args.length < 2) {
+                    // 基岩版没有命令补全，用表单列出工会传送点；Java 版保持原提示
+                    if (BedrockUtil.isBedrock(player)) {
+                        List<GuildWarp> warps = warpManager.getPlayerGuildWarps(player);
+                        if (warps.isEmpty()) {
+                            player.sendMessage(plugin.getLang().t("guild.no_warps"));
+                            return true;
+                        }
+                        List<String> names = warps.stream().map(GuildWarp::getName).collect(Collectors.toList());
+                        boolean ok = BedrockFormsUtil.showListCommandForm(plugin, player,
+                            plugin.getLang().t("guild.menu.title"), names, names, "gtp warp");
+                        if (ok) return true;
+                        return listWarps(player);
+                    }
                     player.sendMessage(plugin.getLang().t("guild.usage_warp"));
                     return true;
                 }
@@ -133,24 +147,13 @@ public class GuildCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        double cost = cfg.getDouble("headquarters.cost", 0.0);
-
         int delay = cfg.getInt("headquarters.delay", 5);
-        try {
-            if (plugin.getDataStore() != null) {
-                plugin.getDataStore().setBack(player.getUniqueId(), player.getLocation());
-            }
-        } catch (Exception ignored) {
-        }
 
-        // 费用在传送真正执行时扣除 | charge at teleport time
-        TeleportUtil.Payment payment = cost > 0 ? p -> {
-            if (!EconomyUtil.charge(plugin, p, cost)) {
-                p.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(cost)));
-                return false;
-            }
-            return true;
-        } : p -> true;
+        // 费用在传送真正执行时扣除，价格延后读取以支持配置热重载与全局默认值层
+        TeleportUtil.Payment payment = com.novamclabs.util.CostModel.asPayment(plugin,
+                () -> com.novamclabs.util.CostModel.Spec.builder()
+                        .money(com.novamclabs.util.CostModel.resolveMoney(plugin, cfg, "guild", "headquarters.cost"))
+                        .build());
 
         TeleportUtil.delayedTeleportWithAnimation(plugin, player, home, delay, "guild", payment, () ->
             player.sendMessage(plugin.getLang().t("guild.teleported_to_hq")));
@@ -224,14 +227,14 @@ public class GuildCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendHelp(Player player) {
-        player.sendMessage("§6=== Guild Teleport ===");
-        player.sendMessage("§e/gtp home §7- " + plugin.getLang().t("guild.teleported_to_hq").replace("§a", ""));
-        player.sendMessage("§e/gtp sethome §7- Set guild HQ");
-        player.sendMessage("§e/gtp warp <name> §7- Teleport to a guild warp");
-        player.sendMessage("§e/gtp setwarp <name> §7- Create a guild warp");
-        player.sendMessage("§e/gtp delwarp <name> §7- Delete a guild warp");
-        player.sendMessage("§e/gtp list §7- List guild warps");
-        player.sendMessage("§e/gtp info §7- Show guild info");
+        player.sendMessage(plugin.getLang().t("guild.help.header"));
+        player.sendMessage(plugin.getLang().t("guild.help.home"));
+        player.sendMessage(plugin.getLang().t("guild.help.sethome"));
+        player.sendMessage(plugin.getLang().t("guild.help.warp"));
+        player.sendMessage(plugin.getLang().t("guild.help.setwarp"));
+        player.sendMessage(plugin.getLang().t("guild.help.delwarp"));
+        player.sendMessage(plugin.getLang().t("guild.help.list"));
+        player.sendMessage(plugin.getLang().t("guild.help.info"));
     }
 
     @Override

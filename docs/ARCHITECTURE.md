@@ -101,6 +101,18 @@ public interface GuildAdapter {
 `PartyAdapter` 只保留纯组队插件（Parties、BetterTeams）；工会插件已迁到 `guild` 包。
 未检测到外部插件时回退到内置组队系统（`PartyManager` + `PartyCommand`）。
 
+### 玩法限制 | Gameplay restrictions
+
+两个独立的内存态管理器，默认关闭，`/stp reload` 时重新读取配置：
+
+- `CombatManager` —— 战斗标签（双向：造成或受到伤害都标记，投掷物与 TNT 会解包出真正的动手方）
+  与「受伤打断倒计时」。状态是 `ConcurrentHashMap`，退出游戏时清理；伤害事件在受害者所属区域
+  线程触发，该类不触碰任何世界/区块 API，因此在 Folia 下安全。
+- `CooldownManager` —— 按传送类型分别记录结束时间戳，检查在发起时、登记在传送成功之后。
+
+本地传送通过 `TeleportUtil` 内联检查，跨服传送通过 `TeleportGates` 调用同一个管理器，
+两者不会分叉。
+
 ---
 
 ## 💾 数据管理 | Data
@@ -149,17 +161,23 @@ public interface GuildAdapter {
    └─ 移动超过 cancel_move_distance（且类型不在豁免列表）→ 取消（不扣费）
    ↓
 执行体 execute()
+   ├─ 战斗标签复查（倒计时期间可能刚被打上标签）
    ├─ 空间锚点校验
    ├─ 领地校验（所有适配器）
    ├─ 扣费（economy.costs.<type> 或调用方提供的 Payment）
    ├─ 动画（playInstant / playPrepare）
    ├─ 传送（Folia: teleportAsync；其他: teleport）
-   ├─ 记录传送日志
+   ├─ 失败（第三方插件取消）→ 退回已扣金钱、提示、中止
+   ├─ 记录传送日志 + 登记冷却
    └─ 玩家所在区域执行后处理（失明效果、尾随粒子、脚本钩子、回调）
 ```
 
 **扣费发生在所有校验之后、传送之前**：倒计时被取消、目标不存在、领地拒绝、锚点缺失都不会扣钱。
-跨服分支（不执行本地传送）由命令层自行调用 `EconomyUtil.charge`。
+但「传送之前」不等于「传送一定发生」——第三方插件仍可取消传送事件，此时**退回刚扣的金钱**
+（只退金钱：`Payment` 抽象拿不到经验/物品成本）。冷却与日志只在确认传送成功后登记。
+
+跨服分支（不执行本地传送）由命令层通过 `TeleportGates.passes` 先做战斗/冷却判断，
+再用 `CostModel.checkAndCharge` 扣费 —— 不走 `TeleportUtil`，因此也不享受传送失败退款。
 
 ---
 
@@ -189,14 +207,20 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     private TollWarpManager tollWarpManager;
     private PartyManager partyManager;
     private PartyAdapterManager partyAdapterManager;
+    private CombatManager combatManager;             // 战斗标签 / 受伤打断（默认关闭）
+    private CooldownManager cooldownManager;         // 按类型冷却（默认关闭）
     // ... 对应的 getter
 }
 ```
 
 对外可用的入口：`getScheduler()`、`getLang()`、`getDataStore()`、`getJavaMenus()`、
-`getRegionManager()`、`getTeleportLogManager()`、`getGuildManager()`、`getTownyTeleportManager()`、
-`getTollWarpManager()`、`getPartyManager()`、`getRtpPoolManager()`、`getAnimationManager()`、
-`getScriptingManager()`、`getCrossServerService()`、`getSteleManager()`、`getOfflineTeleportManager()`。
+`getRegionManager()`、`getTeleportLogManager()`、`getGuildManager()`、`getGuildWarpManager()`、
+`getTownyTeleportManager()`、`getTollWarpManager()`、`getPartyManager()`、`getPartyAdapterManager()`、
+`getRtpPoolManager()`、`getAnimationManager()`、`getScriptingManager()`、`getCrossServerService()`、
+`getSteleManager()`、`getOfflineTeleportManager()`、`getCombatManager()`、`getCooldownManager()`。
+
+另有几个管理器只有内部字段、没有 getter（`PortalManager`、`ScrollManager`、`DeathManager`、
+`JavaMenuConfig` 之外的菜单相关对象），插件外部无法直接取用。
 
 ---
 

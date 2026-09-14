@@ -5,7 +5,9 @@ import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.Waterlogged;
 
+import java.util.HashSet;
 import java.util.Random;
+import java.util.Set;
 
 public class RTPUtil {
     public static class RtpSettings {
@@ -15,6 +17,7 @@ public class RTPUtil {
         public double centerZ;
         public int minY;
         public int maxY;
+        public Set<String> biomeBlacklist = new HashSet<>();
         public boolean avoidWater;
         public boolean avoidLava;
         public boolean avoidLeaves;
@@ -29,10 +32,28 @@ public class RTPUtil {
         RtpSettings s = new RtpSettings();
         String base = "rtp";
         String wbase = base + ".worlds." + world.getName();
-        s.radius = plugin.getConfig().getInt(wbase + ".radius", plugin.getConfig().getInt(base + ".radius", 2000));
+        // 半径/中心/生物群系黑名单以 rtp.yml 的世界配置为权威来源（与 RtpPoolManager 同源）：
+        // 坐标池按 worlds.<world>.min_radius/max_radius/center_x/center_z 生成坐标，
+        // 这里若仍读 config.yml 的 rtp.radius(默认 2000)，同一条 /rtp 的两种用法
+        // （/rtp <半径> 与 /rtp now 取池）就会遵守不同上限。
+        // rtp.yml 未配置该世界时才退回 config.yml 的旧默认值。
+        //
+        // Radius/center/biome blacklist are authoritative in rtp.yml (the same parsed config the
+        // coordinate pool uses) so both consumers share one source; falls back to the old
+        // config.yml defaults when rtp.yml has no entry for this world.
+        com.novamclabs.rtp.RtpPoolManager pool = plugin.getRtpPoolManager();
+        com.novamclabs.rtp.RtpPoolManager.WorldConfig wc = pool == null ? null : pool.getWorldConfig(world.getName());
+        if (wc != null) {
+            s.radius = wc.maxRadius;
+            s.centerX = wc.centerX;
+            s.centerZ = wc.centerZ;
+            s.biomeBlacklist = new HashSet<>(wc.biomeBlacklist);
+        } else {
+            s.radius = plugin.getConfig().getInt(wbase + ".radius", plugin.getConfig().getInt(base + ".radius", 2000));
+            s.centerX = plugin.getConfig().getDouble(wbase + ".center.x", plugin.getConfig().getDouble(base + ".center.x", 0));
+            s.centerZ = plugin.getConfig().getDouble(wbase + ".center.z", plugin.getConfig().getDouble(base + ".center.z", 0));
+        }
         s.tries = plugin.getConfig().getInt(wbase + ".tries", plugin.getConfig().getInt(base + ".tries", 30));
-        s.centerX = plugin.getConfig().getDouble(wbase + ".center.x", plugin.getConfig().getDouble(base + ".center.x", 0));
-        s.centerZ = plugin.getConfig().getDouble(wbase + ".center.z", plugin.getConfig().getDouble(base + ".center.z", 0));
         int worldMin = world.getMinHeight();
         int worldMax = world.getMaxHeight();
         s.minY = Math.max(plugin.getConfig().getInt(wbase + ".min_y", plugin.getConfig().getInt(base + ".min_y", worldMin + 1)), worldMin + 1);
@@ -66,9 +87,38 @@ public class RTPUtil {
             int bx = (int) Math.floor(rx);
             int bz = (int) Math.floor(rz);
 
+            // 冷区块护栏（非显而易见的原因）：
+            // getBiome / getBlockAt 会同步加载并生成目标区块（ServerChunkCache.getChunk 的
+            // 阻塞式冷生成）。本方法在 Spigot/Paper 上由主线程调用、在 Folia 上由 region 线程
+            // 调用，也就是「调用者线程」；一个落在未生成区块上的候选点就足以卡死 tick 并触发
+            // 看门狗——这正是 RtpPoolManager 预生成侧修复过的同一条路径。
+            // 因此未加载的候选直接跳过，绝不请求区块生成。跳过同样消耗 s.tries 计数，
+            // 全都不加载时循环照常结束并返回 null（调用方回 rtp.no_safe），不会死循环。
+            //
+            // Cold-chunk guard: getBiome/getBlockAt force a synchronous chunk load+generate and
+            // this runs on the caller's tick thread (main on Spigot/Paper, region on Folia), so a
+            // candidate whose chunk is not loaded is skipped rather than allowed to block the tick.
+            // Skipping consumes one of the existing s.tries attempts, so the scan still terminates.
+            if (!world.isChunkLoaded(bx >> 4, bz >> 4)) {
+                continue;
+            }
+
             // 从上往下扫描，寻找安全落点
             int top = Math.min(s.maxY, world.getMaxHeight() - 2);
             int bottom = Math.max(s.minY, world.getMinHeight() + 1);
+
+            // 生物群系黑名单（与坐标池 generateAt 相同的判断）。
+            // 默认 rtp.yml 黑名单为 OCEAN/DEEP_OCEAN，而本节是 /rtp 的默认路径，
+            // 缺了这段玩家就会落在海里。列表为空时整段跳过，不产生额外开销。
+            // `continue` 交给外层 s.tries 计数，命中全部黑名单时正常退出返回 null，不会死循环。
+            //
+            // Biome blacklist, same check as RtpPoolManager.generateAt. Empty list = no overhead.
+            // `continue` is bounded by the existing s.tries loop, so an all-blacklisted scan
+            // still terminates and returns null.
+            if (!s.biomeBlacklist.isEmpty() && s.biomeBlacklist.contains(world.getBiome(bx, top, bz).name())) {
+                continue;
+            }
+
             for (int y = top; y >= bottom; y--) {
                 Block below = world.getBlockAt(bx, y - 1, bz);
                 Block feet = world.getBlockAt(bx, y, bz);

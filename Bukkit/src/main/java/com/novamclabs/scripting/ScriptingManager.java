@@ -108,14 +108,23 @@ public class ScriptingManager {
         public ScriptContext(StarTeleport plugin, Player player, Location target) { this.plugin = plugin; this.player = player; this.target = target; }
         public Player player() { return player; }
         public Location target() { return target; }
+        // 与 TeleportUtil 的自有效果同一开关：总开关关闭时脚本也不得发出任何视效
+        private boolean animationEnabled() {
+            return plugin.getConfig().getBoolean("features.animation_enabled", true);
+        }
         public void playSound(String name, float vol, float pitch) {
+            if (!animationEnabled()) return;
             try {
                 org.bukkit.Sound s = org.bukkit.Sound.valueOf(name);
                 player.playSound(player.getLocation(), s, vol, pitch);
             } catch (Exception ignored) {}
         }
-        public void title(String title, String sub) { player.sendTitle(title, sub, 10, 40, 10); }
+        public void title(String title, String sub) {
+            if (!animationEnabled()) return;
+            player.sendTitle(title, sub, 10, 40, 10);
+        }
         public void particle(String type, int count, double dx, double dy, double dz, double speed) {
+            if (!animationEnabled()) return;
             // 粒子常量在 1.20.5 被改名，脚本里两种命名都接受
             org.bukkit.Particle p = com.novamclabs.util.ParticleCompat.parse(type);
             if (p == null) return;

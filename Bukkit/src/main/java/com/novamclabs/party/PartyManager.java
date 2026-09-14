@@ -3,6 +3,9 @@ package com.novamclabs.party;
 import com.novamclabs.StarTeleport;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 轻量级内置组队系统（可选启用）
  * Lightweight built-in party system (optional)
  */
-public class PartyManager {
+public class PartyManager implements Listener {
     public static class Party {
         public UUID leader;
         public final Set<UUID> members = new HashSet<>();
@@ -23,12 +26,22 @@ public class PartyManager {
     private int maxMembers = 4;
     private int inviteExpireSeconds = 120;
     private int teleportDelay = 5;
-    private String leaderPrefix = "§6[队长] ";
-    private String memberPrefix = "§a[队友] ";
+    /** 语言文件缺失该键时的最终回退（与 PartyNameDisplay 共用同一份，避免两处漂移） */
+    static final String FALLBACK_LEADER_PREFIX = "§6[队长] ";
+    static final String FALLBACK_MEMBER_PREFIX = "§a[队友] ";
+    private String leaderPrefix = FALLBACK_LEADER_PREFIX;
+    private String memberPrefix = FALLBACK_MEMBER_PREFIX;
 
     public PartyManager(StarTeleport plugin) {
         this.plugin = plugin;
         loadConfig();
+        plugin.getServer().getPluginManager().registerEvents(this, plugin);
+    }
+
+    /** 下线即退出队伍，否则离队成员的记录会一直留在内存里（领队下线同样解散队伍） */
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        remove(event.getPlayer());
     }
 
     public void loadConfig() {
@@ -48,8 +61,8 @@ public class PartyManager {
         maxMembers = cfg.getInt("max_members", 4);
         inviteExpireSeconds = cfg.getInt("invite_expire_seconds", 120);
         teleportDelay = cfg.getInt("teleport_delay", 5);
-        leaderPrefix = cfg.getString("display.leader_prefix", leaderPrefix);
-        memberPrefix = cfg.getString("display.member_prefix", memberPrefix);
+        leaderPrefix = cfg.getString("display.leader_prefix", plugin.getLang().t("party.prefix.leader"));
+        memberPrefix = cfg.getString("display.member_prefix", plugin.getLang().t("party.prefix.member"));
     }
 
     public int getMaxMembers() { return maxMembers; }

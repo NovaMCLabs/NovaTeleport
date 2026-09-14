@@ -122,6 +122,18 @@ permissions:
     description: 使用 /tplog 回溯玩家传送
     default: op
 
+  # 以下三项只在对应配置节启用时才有意义（combat_tag / damage_interrupt /
+  # teleport_cooldowns 默认都是关闭的），权限节点本身可在 config.yml 里改名
+  novateleport.combat.bypass:
+    description: 战斗中也能发起传送
+    default: false
+  novateleport.damage.bypass:
+    description: 受伤不会打断传送倒计时
+    default: false
+  novateleport.cooldown.bypass:
+    description: 免除传送冷却
+    default: false
+
 commands:
   stp:
     description: 重载插件配置

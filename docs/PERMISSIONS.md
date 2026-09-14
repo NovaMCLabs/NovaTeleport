@@ -34,6 +34,19 @@ permissions in code where the check depends on a subcommand.
 
 - `novateleport.economy.bypass` — bypass all teleport costs
 
+## Gameplay restrictions
+
+These only matter when the corresponding config section is enabled (all three are off by default,
+and the three permission nodes each have `default: false` in `plugin.yml` rather than the usual
+`op`/`true`). Each node is configurable — the values below are the shipped defaults, and the
+`bypass_permission` key in the matching config section can rename it.
+
+- `novateleport.combat.bypass` — teleport while in combat (`combat_tag.bypass_permission`)
+- `novateleport.damage.bypass` — keep a countdown running when damaged
+  (`damage_interrupt.bypass_permission`)
+- `novateleport.cooldown.bypass` — ignore teleport cooldowns
+  (`teleport_cooldowns.bypass_permission`)
+
 ## Animation
 
 - `novateleport.animation.select`

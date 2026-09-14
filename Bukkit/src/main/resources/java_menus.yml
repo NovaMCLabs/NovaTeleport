@@ -77,33 +77,33 @@ menus:
       item: "LODESTONE"
       name: "&a{name}"
       lore:
-        - "&7Click to travel"
+        - "{lang:stele.click_travel}"
       action: "stele_travel"
 
   toll_warps:
     size: 54
-    title: "&6Toll Warps"
+    title: "&6{lang:toll.menu.title}"
     template:
       item: "ENDER_PEARL"
       name: "&b{name}"
       lore:
-        - "&7Owner: &e{owner}"
-        - "&7Price: &a{price}"
-        - "&7Location: &f{world} {x}, {y}, {z}"
-        - "&7Uses: &6{usage}"
+        - "{lang:toll.menu.owner}"
+        - "{lang:toll.menu.price}"
+        - "{lang:toll.menu.location}"
+        - "{lang:toll.menu.uses}"
         - ""
-        - "&eClick to teleport"
+        - "{lang:toll.menu.click_teleport}"
       action: "tollwarp_tp"
 
   teleport_log:
     size: 54
-    title: "&6Teleport Logs: &e{player}"
+    title: "{lang:tplog.menu.title_player}"
     template:
       item: "PAPER"
       name: "&e{type} &7- &f{time}"
       lore:
-        - "&7From: &f{from_world} {from_x}, {from_y}, {from_z}"
-        - "&7To: &f{to_world} {to_x}, {to_y}, {to_z}"
+        - "{lang:tplog.menu.from}"
+        - "{lang:tplog.menu.to}"
         - ""
-        - "&eClick to rewind player to the start"
+        - "{lang:tplog.menu.click_rewind}"
       action: "tplog_rewind"

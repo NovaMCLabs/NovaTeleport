@@ -65,6 +65,42 @@ public class EconomyUtil {
         return String.format("%.2f", amount);
     }
 
+    /**
+     * 扣费可行性。{@link #charge} 把「余额不足」和「经济不可用」都归结为一次失败/放行，
+     * 无法支撑「先校验全部、再统一扣减」的收费流程——调用方需要知道到底差在哪，
+     * 才能给出正确的提示、并在校验阶段就中止而不产生部分扣减。
+     */
+    public enum MoneyStatus {
+        /** 本次不涉及金钱（金额为 0、经济未启用、或有 bypass 权限） */
+        NOT_APPLICABLE,
+        /** 可以扣费 */
+        OK,
+        /** 玩家余额不足 */
+        INSUFFICIENT_FUNDS,
+        /** 配置了收费但经济系统用不了（未启用或无提供者） */
+        UNAVAILABLE
+    }
+
+    /**
+     * 只查询、不扣费。语义与 {@link #charge} 保持一致：
+     * 金额为 0 / 经济未启用 / 玩家有 bypass 权限时视为「不涉及金钱」（放行）。
+     */
+    public static MoneyStatus canCharge(StarTeleport plugin, Player player, double amount) {
+        if (amount <= 0) return MoneyStatus.NOT_APPLICABLE;
+        if (!isEnabled(plugin)) return MoneyStatus.NOT_APPLICABLE;
+        if (player.hasPermission(getBypassPermission(plugin))) return MoneyStatus.NOT_APPLICABLE;
+        if (!hasProvider()) return MoneyStatus.UNAVAILABLE;
+
+        try {
+            return econProvider.getBalance(player) < amount
+                    ? MoneyStatus.INSUFFICIENT_FUNDS
+                    : MoneyStatus.OK;
+        } catch (Throwable t) {
+            plugin.getLogger().warning("[Economy] Error checking balance of " + player.getName() + ": " + t.getMessage());
+            return MoneyStatus.UNAVAILABLE;
+        }
+    }
+
     public static double getBalance(Player player) {
         if (!hasProvider()) return 0.0;
         try {

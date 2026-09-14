@@ -18,7 +18,6 @@ import org.bukkit.inventory.ItemStack;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -47,9 +46,10 @@ public class PortalManager implements Listener {
     private static final long REUSE_COOLDOWN_MS = 3000L;
 
     private final StarTeleport plugin;
-    private final Map<Location, PortalDef> activePortals = new HashMap<>();
+    // 传送门方块由各区域线程读写（Folia 下同服不同区域并行），必须是并发 Map
+    private final Map<Location, PortalDef> activePortals = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastTrigger = new ConcurrentHashMap<>();
-    private Map<String, PortalDef> defs = new HashMap<>();
+    private volatile Map<String, PortalDef> defs = new ConcurrentHashMap<>();
     private File stateFile;
 
     public PortalManager(StarTeleport plugin) {
@@ -75,7 +75,7 @@ public class PortalManager implements Listener {
         }
         YamlConfiguration cfg = YamlConfiguration.loadConfiguration(out);
         ConfigurationSection sec = cfg.getConfigurationSection("portals");
-        Map<String, PortalDef> map = new HashMap<>();
+        Map<String, PortalDef> map = new ConcurrentHashMap<>();
         if (sec == null) {
             this.defs = map;
             return;
@@ -224,9 +224,18 @@ public class PortalManager implements Listener {
         Location to = e.getTo();
         if (to == null) return;
 
-        Location toBlock = to.getBlock().getLocation();
+        // 只取一次方块对象：读取的正是玩家所在的方块，属于该玩家的区域线程，Folia 下也安全
+        org.bukkit.block.Block toB = to.getBlock();
+        Location toBlock = toB.getLocation();
         PortalDef def = activePortals.get(toBlock);
         if (def == null) return;
+
+        // 框架被破坏后传送方块会消失（原版机制），此时地图条目已失效：
+        // 懒清理该条目，避免出现「空气里还能传送」的隐形陷阱
+        if (toB.getType() != def.portalBlock) {
+            activePortals.remove(toBlock, def);
+            return;
+        }
 
         // 只有“刚进入”该方块时才触发；站着不动/原地转头不会重复触发
         Location fromBlock = e.getFrom().getBlock().getLocation();

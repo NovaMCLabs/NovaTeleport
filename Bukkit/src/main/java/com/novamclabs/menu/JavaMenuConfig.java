@@ -102,17 +102,22 @@ public class JavaMenuConfig {
         }
         stack.setAmount(amount);
 
-        if (name != null && !name.isEmpty()) {
-            ItemMeta meta = stack.getItemMeta();
-            if (meta != null) {
+        ItemMeta meta = stack.getItemMeta();
+        if (meta != null) {
+            boolean applied = false;
+            if (name != null && !name.isEmpty()) {
                 meta.setDisplayName(resolveText(name, placeholders));
-                if (lore != null && !lore.isEmpty()) {
-                    List<String> outLore = new ArrayList<>();
-                    for (String l : lore) {
-                        outLore.add(resolveText(l, placeholders));
-                    }
-                    meta.setLore(outLore);
+                applied = true;
+            }
+            if (lore != null && !lore.isEmpty()) {
+                List<String> outLore = new ArrayList<>();
+                for (String l : lore) {
+                    outLore.add(resolveText(l, placeholders));
                 }
+                meta.setLore(outLore);
+                applied = true;
+            }
+            if (applied) {
                 stack.setItemMeta(meta);
             }
         }

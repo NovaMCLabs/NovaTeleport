@@ -17,7 +17,6 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.permissions.PermissionAttachmentInfo;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.io.IOException;
@@ -119,14 +118,18 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (arrival == null) return;
         if (arrival.expireAt < System.currentTimeMillis()) return;
 
-        Player meet = Bukkit.getPlayer(arrival.meet);
+        deliverArrival(joined, arrival.meet);
+    }
+
+    /** 把换服到达的玩家送到会合玩家身边；进服与迟到通知两条路径共用 | shared arrival delivery */
+    private void deliverArrival(Player arriving, UUID meetId) {
+        Player meet = Bukkit.getPlayer(meetId);
         if (meet == null) {
-            joined.sendMessage(plugin.getLang().t("tpa.cross.meet_offline"));
+            arriving.sendMessage(plugin.getLang().t("tpa.cross.meet_offline"));
             return;
         }
-        try { if (store != null) store.setBack(joined.getUniqueId(), joined.getLocation()); } catch (Exception ignored) {}
-        TeleportUtil.delayedTeleportWithAnimation(plugin, joined, meet.getLocation(), 0, "tpa", () ->
-                joined.sendMessage(plugin.getLang().t("tpa.accepted.complete")));
+        TeleportUtil.delayedTeleportWithAnimation(plugin, arriving, meet.getLocation(), 0, "tpa", () ->
+                arriving.sendMessage(plugin.getLang().t("tpa.accepted.complete")));
     }
 
     @Override
@@ -161,7 +164,8 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player requester = (Player) sender;
         if (args.length < 1) { requester.sendMessage(plugin.getLang().t(here?"usage.tpahere":"usage.tpa")); return true; }
-        Player target = Bukkit.getPlayerExact(args[0]);
+        // Floodgate 会给基岩版名字加 "." 前缀，必须走兼容查找，否则 /tpa 永远报“玩家不在线”
+        Player target = BedrockUtil.findPlayer(args[0]);
         if (target == null) {
             // 目标不在本服：尝试通过 Redis 转发到其所在服务器
             if (plugin.getCrossServerService() != null && plugin.getCrossServerService().isActive()
@@ -213,6 +217,12 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         }
 
         if (req.crossServer) {
+            // /tpahere：换服的是目标本人（就在本服），因此校验与扣费都在这里完成；
+            // /tpa：换服的是请求方，由请求方所在服务器在收到 tpa_accept 时处理。
+            if (req.here) {
+                if (!passesCrossServerGates(target, "tpahere")) return true;
+                if (!ensurePaid(target, "tpahere")) return true;
+            }
             incoming.remove(target.getUniqueId());
             long expireAt = System.currentTimeMillis() + TPA_EXPIRE_MILLIS;
             if (req.here) {
@@ -224,11 +234,8 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 notice.put("meet", req.requesterName == null ? "" : req.requesterName);
                 if (plugin.getCrossServerService() != null) plugin.getCrossServerService().publish(notice);
                 target.sendMessage(plugin.getLang().tr("tpa.cross.travel", "server", req.requesterServer));
-                // 延后 1 秒再切服：给对方服务器留出处理 Redis 通知的时间，
-                // 否则玩家可能在对方登记“等待到达”之前就已经进服，导致到达后不被送到身边。
-                plugin.getScheduler().runLater(() -> {
-                    if (target.isOnline()) com.novamclabs.util.ProxyMessenger.connect(plugin, target, req.requesterServer);
-                }, 20L);
+                com.novamclabs.util.ProxyMessenger.connect(plugin, target, req.requesterServer);
+                recordCrossServerCooldown(target, "tpahere");
             } else {
                 // /tpa：请求方会前来本服，登记到达后要见的目标，并通知请求方所在服务器
                 if (req.requesterName != null && !req.requesterName.isEmpty()) {
@@ -247,7 +254,6 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         Player mover = req.here ? target : requester;
         Location dest = (req.here ? requester : target).getLocation();
         String actionKey = req.here ? "tpahere" : "tpa";
-        try { if (store != null) store.setBack(mover.getUniqueId(), mover.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         SchedulerWrapper.ScheduledTask task = TeleportUtil.delayedTeleportWithAnimation(plugin, mover, dest, delay, actionKey, () -> {
             cleanup(req);
@@ -309,7 +315,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 String targetName = data.get("target");
                 String requesterName = data.get("requester");
                 if (targetName == null || requesterName == null) return;
-                Player target = Bukkit.getPlayerExact(targetName);
+                Player target = BedrockUtil.findPlayer(targetName);
                 if (target == null) return;
                 boolean here = Boolean.parseBoolean(data.getOrDefault("here", "false"));
                 TpaRequest req = new TpaRequest(null, requesterName, target.getUniqueId(), here,
@@ -319,12 +325,25 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 break;
             }
             case "tpa_arriving": {
-                // 另一台服务器上的玩家即将换到本服，到达后应被送到 meetPlayer 身边
+                // 另一台服务器上的玩家即将换到本服，到达后应被送到 meetPlayer 身边。
+                // 只有 /tpahere 会产生这条消息（/tpa 走 tpa_accept），因此本服必须存在一条
+                // meet 自己发起的、跨服的、here=true 的待处理请求；否则任何人都能往频道里
+                // 发一条消息，让指定玩家被送到攻击者指定的玩家身边。
                 String arriving = data.get("arriving");
                 String meetName = data.get("meet");
                 if (arriving == null || arriving.isEmpty() || meetName == null || meetName.isEmpty()) return;
-                Player meet = Bukkit.getPlayerExact(meetName);
+                Player meet = BedrockUtil.findPlayer(meetName);
                 if (meet == null) return;
+                TpaRequest pending = outgoing.get(meet.getUniqueId());
+                if (pending == null || !pending.crossServer || !pending.here) return;
+                outgoing.remove(meet.getUniqueId());
+                Player arrivingPlayer = BedrockUtil.findPlayer(arriving);
+                if (arrivingPlayer != null) {
+                    // 通知可能晚于玩家进服（Redis 延迟或重连），此时直接完成会合，
+                    // 结果不再取决于通知与进服的先后顺序。
+                    deliverArrival(arrivingPlayer, meet.getUniqueId());
+                    break;
+                }
                 arrivals.put(arriving.toLowerCase(Locale.ROOT),
                         new Arrival(meet.getUniqueId(), System.currentTimeMillis() + TPA_EXPIRE_MILLIS));
                 break;
@@ -332,22 +351,26 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             case "tpa_accept": {
                 String requesterName = data.get("requester");
                 if (requesterName == null || requesterName.isEmpty()) return;
-                Player requester = Bukkit.getPlayerExact(requesterName);
+                Player requester = BedrockUtil.findPlayer(requesterName);
                 if (requester == null) return;
                 // 只处理确实由本服发起的跨服请求，避免响应伪造的 Redis 消息
                 TpaRequest pending = outgoing.get(requester.getUniqueId());
                 if (pending == null || !pending.crossServer) return;
-                outgoing.remove(requester.getUniqueId());
                 String targetServer = data.get("server");
                 if (targetServer == null || targetServer.isEmpty()) return;
+                // /tpa 换服的是请求方本人，请求方就在本服，校验与扣费必须在这里完成
+                if (!passesCrossServerGates(requester, "tpa")) return;
+                if (!ensurePaid(requester, "tpa")) return;
+                outgoing.remove(requester.getUniqueId());
                 requester.sendMessage(plugin.getLang().tr("tpa.cross.travel", "server", targetServer));
                 com.novamclabs.util.ProxyMessenger.connect(plugin, requester, targetServer);
+                recordCrossServerCooldown(requester, "tpa");
                 break;
             }
             case "tpa_deny": {
                 String requesterName = data.get("requester");
                 if (requesterName == null || requesterName.isEmpty()) return;
-                Player requester = Bukkit.getPlayerExact(requesterName);
+                Player requester = BedrockUtil.findPlayer(requesterName);
                 if (requester == null) return;
                 TpaRequest pending = outgoing.get(requester.getUniqueId());
                 if (pending == null || !pending.crossServer) return;
@@ -387,6 +410,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
     private boolean handleHome(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
+        if (!requirePermission(sender, "novateleport.command.home")) return true;
         Player p = (Player) sender;
         // 无参数：打开菜单；带参数：直达
         if (args.length == 0) {
@@ -399,13 +423,14 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
         // 跨服家：记录的目标服务器不是本服，交给代理切服（本地无法校验该世界的存在性）
         if (isRemoteServer(dest.server)) {
+            if (!passesCrossServerGates(p, "home")) return true;
             if (!ensurePaid(p, "home")) return true;
             com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server);
+            recordCrossServerCooldown(p, "home");
             p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
             return true;
         }
         if (dest.location == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
-        try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, "home", () -> p.sendMessage(plugin.getLang().t("homes.welcome")));
         return true;
@@ -423,6 +448,8 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         Player p = (Player) sender;
         String name = DataStore.normalizeName(args.length >= 1 ? args[0] : "home");
         if (name == null) { p.sendMessage(plugin.getLang().tr("homes.invalid_name", "name", args[0])); return true; }
+        // delHome 不报告是否真的删掉了什么，先查存在性，否则删不存在的家也会报「已删除」
+        if (store.getHomeDest(p.getUniqueId(), name) == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
         try { store.delHome(p.getUniqueId(), name); } catch (IOException e) { p.sendMessage(plugin.getLang().t("common.delete_failed")); return true; }
         p.sendMessage(plugin.getLang().tr("homes.deleted", "name", name));
         return true;
@@ -430,13 +457,14 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
     private boolean handleHomes(CommandSender sender) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
+        if (!requirePermission(sender, "novateleport.command.home")) return true;
         Player p = (Player) sender;
         List<String> list = store.listHomes(p.getUniqueId());
         if (list.isEmpty()) { p.sendMessage(plugin.getLang().t("homes.none")); return true; }
         if (BedrockUtil.isBedrock(p)) {
             // 基岩版：使用表单列出并点击执行 /home <name> | Bedrock: form list -> /home <name>
             boolean ok = com.novamclabs.util.BedrockFormsUtil.showListCommandForm(plugin, p,
-                    plugin.getLang().t("menu.homes.title"), list, "home");
+                    plugin.getLang().t("menu.homes.title"), list, list, "home");
             if (!ok) {
                 p.sendMessage("§6" + plugin.getLang().t("menu.homes.title") + ": §f" + String.join(", ", list));
             }
@@ -464,6 +492,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
     private boolean handleWarp(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
+        if (!requirePermission(sender, "novateleport.command.warp")) return true;
         Player p = (Player) sender;
         if (args.length < 1) { return handleWarps(sender); }
         String name = DataStore.normalizeName(args[0]);
@@ -473,13 +502,14 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
         // 跨服传送点：目标服务器不是本服，交给代理切服
         if (isRemoteServer(dest.server)) {
+            if (!passesCrossServerGates(p, "warp")) return true;
             if (!ensurePaid(p, "warp")) return true;
             com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server);
+            recordCrossServerCooldown(p, "warp");
             p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
             return true;
         }
         if (dest.location == null) { p.sendMessage(plugin.getLang().tr("warps.not_found", "name", name)); return true; }
-        try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest.location, delay, "warp", () -> p.sendMessage(plugin.getLang().tr("warps.arrived", "name", name)));
         return true;
@@ -497,12 +527,13 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
     private boolean handleWarps(CommandSender sender) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().tr("warps.list", "list", String.join(", ", store.listWarps()))); return true; }
+        if (!requirePermission(sender, "novateleport.command.warp")) return true;
         Player p = (Player) sender;
         List<String> list = store.listWarps();
         if (list.isEmpty()) { p.sendMessage(plugin.getLang().t("warps.none")); return true; }
         if (BedrockUtil.isBedrock(p)) {
             boolean ok = com.novamclabs.util.BedrockFormsUtil.showListCommandForm(plugin, p,
-                    plugin.getLang().t("menu.warps.title"), list, "warp");
+                    plugin.getLang().t("menu.warps.title"), list, list, "warp");
             if (!ok) {
                 p.sendMessage("§6" + plugin.getLang().t("menu.warps.title") + ": §f" + String.join(", ", list));
             }
@@ -516,7 +547,6 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         Player p = (Player) sender;
         Location loc = p.getWorld().getSpawnLocation();
-        try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, "spawn", () -> p.sendMessage(plugin.getLang().t("spawn.done")));
         return true;
@@ -524,6 +554,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
     private boolean handleBack(CommandSender sender) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
+        if (!requirePermission(sender, "novateleport.command.back")) return true;
         Player p = (Player) sender;
         Location back = store.getBack(p.getUniqueId());
         if (back == null) { p.sendMessage(plugin.getLang().t("back.none")); return true; }
@@ -534,6 +565,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
 
     private boolean handleRtp(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
+        if (!requirePermission(sender, "novateleport.command.rtp")) return true;
         Player p = (Player) sender;
         if (args.length == 0) {
             return handleRtpGui(sender);
@@ -561,7 +593,6 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random());
         }
         if (dest == null) { p.sendMessage(plugin.getLang().t("rtp.no_safe")); return true; }
-        try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp", () -> p.sendMessage(plugin.getLang().t("rtp.done")));
         return true;
@@ -576,17 +607,21 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             int current = rtpRadiusChoices.get(p.getUniqueId());
             int step = plugin.getConfig().getInt("rtp.gui.step", 500);
             int max = com.novamclabs.util.RTPUtil.loadSettings(plugin, p.getWorld()).radius;
-            com.novamclabs.util.BedrockFormsUtil.showRtpRadiusForm(plugin, p, current, step, max, (val) -> {
+            boolean sent = com.novamclabs.util.BedrockFormsUtil.showRtpRadiusForm(plugin, p, current, step, max, (val) -> {
                 rtpRadiusChoices.put(p.getUniqueId(), val);
                 org.bukkit.Location dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, p.getWorld(), new java.util.Random(), val);
                 if (dest == null) {
                     p.sendMessage(plugin.getLang().t("rtp.no_safe"));
                 } else {
-                    try { store.setBack(p.getUniqueId(), p.getLocation()); } catch (Exception ignored) {}
                     int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
                     com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp", () -> p.sendMessage(plugin.getLang().t("rtp.done")));
                 }
             });
+            if (!sent) {
+                // 不能再提示 /rtp：无参 /rtp 又会回到这里，玩家会卡在同一个提示上
+                p.sendMessage(plugin.getLang().t("bedrock.menu.header"));
+                p.sendMessage(plugin.getLang().t("usage.rtp"));
+            }
             return true;
         }
         openRtpGui(p);
@@ -594,6 +629,8 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     }
 
     private void openRtpGui(Player p) {
+        // 菜单直接调用这里，绕过了命令层的权限校验 | menu bypasses the command-level permission gate
+        if (!requirePermission(p, "novateleport.command.rtp")) return;
         int defaultRadius = plugin.getConfig().getInt("rtp.radius", 2000);
         rtpRadiusChoices.putIfAbsent(p.getUniqueId(), defaultRadius);
         int radius = rtpRadiusChoices.get(p.getUniqueId());
@@ -625,7 +662,10 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                     plugin.getLang().t("menu.main.rtp"),
                     plugin.getLang().t("menu.main.back")
             );
-            boolean ok = com.novamclabs.util.BedrockFormsUtil.showListCommandForm(plugin, p, plugin.getLang().t("menu.main.title"), entries, "ntp");
+            // 标签是本地化文本，命令参数必须另给 | labels are localized, args must be separate
+            java.util.List<String> subcommands = java.util.Arrays.asList("homes", "warps", "rtp", "back");
+            boolean ok = com.novamclabs.util.BedrockFormsUtil.showListCommandForm(plugin, p,
+                    plugin.getLang().t("menu.main.title"), entries, subcommands, "ntp");
             if (!ok) {
                 p.sendMessage(plugin.getLang().t("bedrock.menu.header"));
                 p.sendMessage(plugin.getLang().t("bedrock.menu.tip.homes"));
@@ -702,16 +742,38 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
     }
 
     /**
+     * 共享处理入口的权限校验。菜单与基岩表单直接调用这些 handler，
+     * 不像命令那样经过 plugin.yml/PluginCommand 的权限门，所以它们必须自己再查一次。
+     */
+    private boolean requirePermission(CommandSender sender, String node) {
+        if (sender.hasPermission(node)) return true;
+        sender.sendMessage(plugin.getLang().t("command.no_permission"));
+        return false;
+    }
+
+    /**
      * 立即扣费。仅用于“不走本地传送”的分支（跨服切换），
      * 本地传送的费用由 TeleportUtil 在真正传送时扣除。
+     *
+     * 注意：扣费发生在 {@code ProxyMessenger.connect} 之前，代理切服失败不会退款——
+     * 没有代理侧回执就无法可靠回滚。这是既有行为，已在文档中标注。
      */
     private boolean ensurePaid(Player p, String actionKey) {
-        double cost = com.novamclabs.util.EconomyUtil.getCost(plugin, actionKey);
-        if (!com.novamclabs.util.EconomyUtil.charge(plugin, p, cost)) {
-            p.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", com.novamclabs.util.EconomyUtil.format(cost)));
-            return false;
-        }
-        return true;
+        return com.novamclabs.util.CostModel.checkAndCharge(plugin, p,
+                com.novamclabs.util.CostModel.fromGlobal(plugin, actionKey));
+    }
+
+    /**
+     * 跨服传送不走 {@code TeleportUtil}，战斗标签与冷却必须在这里单独把关，
+     * 否则跨服会绕过这两项限制。实际判断统一走 {@link com.novamclabs.util.TeleportGates}。
+     */
+    private boolean passesCrossServerGates(Player p, String type) {
+        return com.novamclabs.util.TeleportGates.passes(plugin, p, type);
+    }
+
+    /** 跨服传送发出后登记冷却（与本地传送在 execute 中登记相对应） */
+    private void recordCrossServerCooldown(Player p, String type) {
+        com.novamclabs.util.TeleportGates.record(plugin, p, type);
     }
 
     @EventHandler
@@ -781,10 +843,6 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 if (dest == null) {
                     p.sendMessage(plugin.getLang().t("rtp.no_safe"));
                     return;
-                }
-                try {
-                    store.setBack(p.getUniqueId(), p.getLocation());
-                } catch (Exception ignored) {
                 }
                 int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
                 com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp",

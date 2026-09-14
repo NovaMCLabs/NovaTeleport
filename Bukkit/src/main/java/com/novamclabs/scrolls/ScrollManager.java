@@ -24,7 +24,7 @@ import java.util.List;
 public class ScrollManager implements Listener {
     private final StarTeleport plugin;
     private String boundSpec = "PAPER";
-    private String boundName = "§a传送卷轴: §f{target}";
+    private String boundName;
 
     private final NamespacedKey keyType;
     private final NamespacedKey keyName;
@@ -44,7 +44,7 @@ public class ScrollManager implements Listener {
         }
         YamlConfiguration cfg = YamlConfiguration.loadConfiguration(out);
         this.boundSpec = cfg.getString("bound.material", "PAPER");
-        this.boundName = cfg.getString("bound.name", this.boundName);
+        this.boundName = cfg.getString("bound.name", plugin.getLang().t("scroll.bound.default_name"));
     }
 
     public ItemStack createBoundScroll(String type, String targetName) {
@@ -54,8 +54,8 @@ public class ScrollManager implements Listener {
         if (im != null) {
             im.setDisplayName(boundName.replace("{target}", targetName));
             List<String> lore = new ArrayList<>();
-            lore.add("§7类型: " + type);
-            lore.add("§7目的地: " + targetName);
+            lore.add(plugin.getLang().tr("scroll.bound.lore_type", "type", type));
+            lore.add(plugin.getLang().tr("scroll.bound.lore_target", "target", targetName));
             im.setLore(lore);
             im.addItemFlags(ItemFlag.HIDE_ENCHANTS);
             im.getPersistentDataContainer().set(keyType, PersistentDataType.STRING, type);
@@ -86,6 +86,9 @@ public class ScrollManager implements Listener {
         String target = im.getPersistentDataContainer().get(keyName, PersistentDataType.STRING);
         if (type == null || target == null) return;
 
+        // 确实是传送卷轴：吃掉这次右键，否则右键箱子会既开箱又起传送
+        e.setCancelled(true);
+
         Player p = e.getPlayer();
         Location loc = null;
         if (type.equalsIgnoreCase("warp")) {
@@ -101,20 +104,36 @@ public class ScrollManager implements Listener {
             return; // 已经在倒计时中，避免连续消耗
         }
 
-        // 卷轴在传送真正执行时才消耗，避免传送被取消却把卷轴吃掉
-        com.novamclabs.util.TeleportUtil.Payment consume = player -> {
-            for (ItemStack stack : player.getInventory().getContents()) {
-                if (isBoundScroll(stack, type, target)) {
-                    stack.setAmount(stack.getAmount() - 1);
-                    return true;
-                }
+        // 卷轴在传送真正成功之后才消耗：TeleportUtil 的失败回滚只能退金钱，
+        // 如果在扣费回调里移除物品，被第三方插件拦截的传送就白吃一张卷轴。
+        com.novamclabs.util.CostModel.Spec spec = com.novamclabs.util.CostModel.Spec.builder()
+                .item(com.novamclabs.util.CostModel.ItemReq.of("scroll", 1,
+                        stack -> isBoundScroll(stack, type, target)))
+                .itemDeniedKey("scroll.invalid_target")
+                .build();
+        com.novamclabs.util.TeleportUtil.Payment check = player -> {
+            com.novamclabs.util.CostModel.Result result = com.novamclabs.util.CostModel.preflight(plugin, player, spec);
+            if (!result.ok()) {
+                com.novamclabs.util.CostModel.notifyDenied(plugin, player, spec, result);
+                return false;
             }
-            player.sendMessage(plugin.getLang().t("scroll.invalid_target"));
-            return false;
+            return true;
         };
 
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
-        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, "scroll", consume,
-                () -> p.sendMessage(plugin.getLang().t("scroll.done")));
+        com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, loc, delay, "scroll", check, () -> {
+            removeScroll(p, type, target);
+            p.sendMessage(plugin.getLang().t("scroll.done"));
+        });
+    }
+
+    /** 传送成功后移除一张卷轴；找不到就什么都不做（正常路径下必然还在背包里） */
+    private void removeScroll(Player p, String type, String target) {
+        for (ItemStack stack : p.getInventory().getContents()) {
+            if (stack == null || stack.getType().isAir()) continue;
+            if (!isBoundScroll(stack, type, target)) continue;
+            stack.setAmount(stack.getAmount() - 1);
+            return;
+        }
     }
 }

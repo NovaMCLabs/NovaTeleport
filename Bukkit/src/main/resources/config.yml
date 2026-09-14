@@ -9,8 +9,17 @@ general:
   language: zh_CN
   debug: false
 
+# 基岩版支持 | Bedrock support
+bedrock:
+  forms:
+    # 是否启用基岩版 Form 表单；关闭后基岩玩家一律回退到聊天文本菜单
+    # Enable Bedrock forms; when disabled Bedrock players always fall back to chat menus.
+    enabled: true
+
 # 网络与跨服设置 | Network & cross-server
 network:
+  # 每个服务器必须唯一：重名时双方会丢弃对方的跨服消息（静默失效）
+  # Must be unique per server; duplicates silently drop each other's cross-server messages.
   server_name: local
   redis:
     enabled: false
@@ -47,6 +56,55 @@ commands:
     - portal
   # 倒计时期间是否禁止交互/破坏/放置
   block_interactions: false
+
+# ============================================================
+# 玩法限制 | Gameplay restrictions
+# 两节默认都关闭：纯便利型 / 建筑服通常不希望传送被战斗或冷却限制。
+# ============================================================
+
+# 战斗中禁止发起传送。
+# 判定是双向的：玩家造成伤害或受到伤害都算进入战斗（含与生物的战斗），
+# 因此既能阻止「被追着打时传送逃跑」，也能阻止「打一下就跑」。
+combat_tag:
+  enabled: false
+  # 进入战斗后持续多少秒（最后一次伤害若刷新则从那时重新计时）
+  duration_seconds: 15
+  # 再次受伤是否刷新计时器；false 则首次受击后固定时长
+  refresh_on_damage: true
+  # 不受战斗限制的传送类型（与 commands.move_cancel_exempt_types 同一种写法）
+  exempt_types: []
+  bypass_permission: novateleport.combat.bypass
+
+# 受伤打断进行中的传送倒计时。
+# 即使 combat_tag 关闭，这一节也独立生效。
+damage_interrupt:
+  enabled: false
+  exempt_types:
+    - portal
+  bypass_permission: novateleport.damage.bypass
+
+# 按传送类型分别设置的冷却（秒，0 = 该类型无冷却）。
+# 冷却在传送真正执行后才登记，因此倒计时被取消、或校验/扣费失败都不会消耗冷却。
+teleport_cooldowns:
+  enabled: false
+  bypass_permission: novateleport.cooldown.bypass
+  types:
+    home: 0
+    warp: 0
+    spawn: 0
+    back: 0
+    rtp: 0
+    tpa: 0
+    tpahere: 0
+    deathback: 0
+    city: 0
+    party: 0
+    scroll: 0
+    stele: 0
+    guild: 0
+    towny: 0
+    tollwarp: 0
+    auto_world_teleport: 0
 
 # 显示设置 | Display settings
 # 建议默认使用 TITLE（Java/基岩版都原生支持）
@@ -137,7 +195,21 @@ rtp:
 
 # 视觉与落地效果
 features:
+  # 动画总开关：关闭后下面的粒子/音效/逐风格开关全部失效
   animation_enabled: true
+  # 只关粒子时把这里设为 false（音效保留）
+  animation_particles: true
+  # 只关音效时把这里设为 false（粒子保留）
+  animation_sounds: true
+  # 粒子/音效刷新间隔（tick），20 = 每秒一次；调大后特效更少。不影响倒计时总时长与传送时刻
+  animation_effect_interval_ticks: 20
+  # 基岩版粒子数量倍率。Geyser 每个粒子各发一个包（上限 100），因此基岩版按此倍率缩减
+  bedrock_particle_multiplier: 0.5
+  # 逐风格开关：magic | tech | natural
+  animation_styles:
+    magic: true
+    tech: true
+    natural: true
   post_effect_enabled: true
   # 若玩家在船中，是否携带船及其中的生物一起传送
   carry_boat_with_passengers: false
@@ -158,6 +230,15 @@ economy:
   enabled: false
   # 拥有该权限将免除一切费用
   bypass_permission: novateleport.economy.bypass
+
+  # 全局默认值层（默认关闭）。
+  # 关闭时：各功能只认自己配置文件里的费用键，下面 costs 里带 * 的键不生效。
+  # 开启后：某功能自己的配置文件里【没写】费用键时，回退到下面的 economy.costs.<类型>。
+  #   注意「没写」指的是键不存在——各功能的默认配置都写了 cost 键（哪怕值是 0），
+  #   所以开启后只有当你主动删掉那个键，全局值才会接管。
+  global_fallback:
+    enabled: false
+
   # 各类操作费用（0 表示免费）
   # 键名与传送类型一致，费用在传送真正执行时才扣除，倒计时被取消不会扣钱
   costs:
@@ -169,13 +250,20 @@ economy:
     rtp: 0
     tpa: 0
     tpahere: 0
-    deathback: 0
     city: 0
     party: 0
-    scroll: 0
-    portal: 0
+    # 以下键由各功能自己的配置接管（开启 global_fallback 后才会作为回退生效）：
+    #   deathback → death.yml 的 cost
+    #   stele     → steles.yml 的 teleport_cost
+    #   guild     → guild_config.yml 的 warps.cost / headquarters.cost
+    #   towny     → features_config.yml 的 towny.home_cost / towny.other_cost
+    #   tollwarp  → 价格来自每个付费传送点自身的数据，不参与回退
+    #   scroll    → 消耗的是绑定的卷轴物品，不是金钱
+    deathback: 0
     stele: 0
     guild: 0
     towny: 0
     tollwarp: 0
+    scroll: 0
+    portal: 0
     rewind: 0

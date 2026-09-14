@@ -49,6 +49,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     /** PlaceholderAPI 扩展（服务端未安装时为 null）| null unless PlaceholderAPI is installed */
     private com.novamclabs.hook.NovaPlaceholderExpansion placeholderExpansion;
 
+    private com.novamclabs.combat.CombatManager combatManager;
+    private com.novamclabs.cooldown.CooldownManager cooldownManager;
+
     // 配置键常量
     private static final String CONFIG_DEBUG = "debug";
     private static final String CONFIG_DELAY = "delay_seconds";
@@ -108,6 +111,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         // 初始化语言系统
         this.lang = new com.novamclabs.lang.LanguageManager(this);
         this.lang.ensureDefaults("zh_CN","en_US");
+        // 必须在这里就加载：下面各管理器的构造函数里会取语言文本作为默认值，
+        // 语言未加载时它们拿到的是原始键名
+        this.lang.load(getConfig().getString("general.language", getConfig().getString("language", "zh_CN")));
 
         // Java 菜单配置（独立文件）
         this.javaMenus = new com.novamclabs.menu.JavaMenuConfig(this);
@@ -138,10 +144,19 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
 
         loadConfig();
 
+        // 玩法限制（默认关闭）| gameplay restrictions, off by default
+        this.combatManager = new com.novamclabs.combat.CombatManager(this);
+        this.cooldownManager = new com.novamclabs.cooldown.CooldownManager(this);
+
+        // 配置了费用但经济用不了时提示服主（只提示，不改变行为）
+        com.novamclabs.util.CostModel.warnIfCostsUnusable(this);
+
         // 初始化领地保护适配器
         com.novamclabs.util.RegionGuardUtil.init(this);
 
         getServer().getPluginManager().registerEvents(this, this);
+        // 各菜单只取消 InventoryClickEvent，不注册它的话展示物仍可被拖进背包
+        new com.novamclabs.listener.MenuDragGuard(this);
         getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
         getCommand("stp").setExecutor(this);
         // 注册传送相关命令 | Register commands
@@ -279,6 +294,8 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
      */
     private void reloadPluginConfig() {
         reloadConfig();
+        // 服名改了要及时同步，否则已存的家/传送点会被当成跨服目标（见 DataStore.serverName）
+        if (this.dataStore != null) this.dataStore.reloadServerName();
         // 重载语言与经济
         String lc = getConfig().getString("general.language", getConfig().getString("language", "zh_CN"));
         if (this.lang != null) this.lang.load(lc);
@@ -296,6 +313,14 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         if (this.townyTeleportManager != null) this.townyTeleportManager.reload();
         if (this.tollWarpManager != null) this.tollWarpManager.reload();
         if (this.teleportLogManager != null) this.teleportLogManager.reloadAll();
+        if (this.deathManager != null) this.deathManager.reload();
+        // 玩法限制：漏掉这两处会导致 /stp reload 后新配置不生效
+        if (this.combatManager != null) this.combatManager.reload();
+        if (this.cooldownManager != null) this.cooldownManager.reload();
+        // 跨服设置（server_name / redis.*）同样需要重连才能生效
+        if (this.crossServerService != null) this.crossServerService.reload();
+        // 经济设置可能刚被改过，重新核对一次
+        com.novamclabs.util.CostModel.warnIfCostsUnusable(this);
     }
 
     /**
@@ -328,6 +353,15 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
 
     public boolean isTeleporting(UUID uuid) {
         return sessions.containsKey(uuid);
+    }
+
+    /**
+     * 待执行传送的类型（没有排队中的传送时为 null）。
+     * 「受伤打断倒计时」用它来决定该传送是否在豁免列表里。
+     */
+    public String getPendingTeleportType(UUID uuid) {
+        TeleportSession session = sessions.get(uuid);
+        return session == null ? null : session.type;
     }
 
     private boolean isInteractionBlocked(UUID uuid) {
@@ -542,13 +576,7 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
             return false;
         }
 
-        // 记录/back 位置
-        try {
-            if (this.dataStore != null) {
-                this.dataStore.setBack(player.getUniqueId(), player.getLocation());
-            }
-        } catch (Exception ignored) {}
-
+        // /back 由 TeleportUtil 在确认传送成功后写入，这里不能提前写
         scheduleTeleport(player, targetWorld);
 
         if (debug) {
@@ -590,6 +618,9 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
     public com.novamclabs.offline.OfflineTeleportManager getOfflineTeleportManager() { return this.offlineTeleportManager; }
     public void setDebug(boolean enabled) { this.debug = enabled; }
     public boolean isDebug() { return this.debug; }
+
+    public com.novamclabs.combat.CombatManager getCombatManager() { return this.combatManager; }
+    public com.novamclabs.cooldown.CooldownManager getCooldownManager() { return this.cooldownManager; }
 
     /**
      * 调度自动世界传送 | schedule auto world teleport

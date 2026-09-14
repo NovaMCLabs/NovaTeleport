@@ -2,7 +2,6 @@ package com.novamclabs.death;
 
 import com.novamclabs.StarTeleport;
 import com.novamclabs.util.BedrockFormsUtil;
-import com.novamclabs.util.EconomyUtil;
 import com.novamclabs.util.TeleportUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -11,6 +10,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -27,17 +27,23 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class DeathManager implements Listener, CommandExecutor {
     private final StarTeleport plugin;
-    private final YamlConfiguration conf;
+    // 配置可被 /stp reload 替换，因此不能是 final；读取发生在区域线程，用 volatile 保证可见性
+    private volatile YamlConfiguration conf;
     private final Map<UUID, Long> cooldowns = new ConcurrentHashMap<>();
 
     public DeathManager(StarTeleport plugin) {
         this.plugin = plugin;
+        reload();
+        Bukkit.getPluginManager().registerEvents(this, plugin);
+    }
+
+    /** 重新载入 death.yml | reload death.yml */
+    public void reload() {
         File f = new File(plugin.getDataFolder(), "death.yml");
         if (!f.exists()) {
             try { plugin.saveResource("death.yml", false);} catch (IllegalArgumentException ignored) {}
         }
         conf = YamlConfiguration.loadConfiguration(f);
-        Bukkit.getPluginManager().registerEvents(this, plugin);
     }
 
     @EventHandler
@@ -47,6 +53,11 @@ public class DeathManager implements Listener, CommandExecutor {
         Location loc = p.getLocation().clone();
         plugin.getDataStore().setPlayerValue(p.getUniqueId(), "death.last",
                 com.novamclabs.storage.DataStore.serializeLocation(loc));
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent e) {
+        cooldowns.remove(e.getPlayer().getUniqueId());
     }
 
     @EventHandler
@@ -71,7 +82,11 @@ public class DeathManager implements Listener, CommandExecutor {
         boolean show = bedrock ? conf.getBoolean("auto_prompt.bedrock", true) : conf.getBoolean("auto_prompt.java", true);
         if (!show) return;
         if (bedrock) {
-            BedrockFormsUtil.showModalConfirm(plugin, p, plugin.getLang().t("menu.main.title"), plugin.getLang().t("death.prompt"), plugin.getLang().t("death.back_now"), "§cCancel", () -> p.performCommand("deathback"));
+            boolean sent = BedrockFormsUtil.showModalConfirm(plugin, p, plugin.getLang().t("menu.main.title"), plugin.getLang().t("death.prompt"), plugin.getLang().t("death.back_now"), plugin.getLang().t("tpa.button.deny"), () -> p.performCommand("deathback"));
+            // 表单发不出去时退回聊天提示，否则基岩玩家既没有表单也没有任何提示（走投无路）
+            if (!sent) {
+                com.novamclabs.util.ChatCompat.sendRunCommand(p, plugin.getLang().t("death.back_now"), "/deathback", "GREEN");
+            }
         } else {
             com.novamclabs.util.ChatCompat.sendRunCommand(p, plugin.getLang().t("death.back_now"), "/deathback", "GREEN");
         }
@@ -104,22 +119,12 @@ public class DeathManager implements Listener, CommandExecutor {
 
     /** death.yml 的传送费用（Vault 金币 + 经验等级）| death-back cost from death.yml */
     private TeleportUtil.Payment deathPayment() {
-        double vault = conf.getDouble("cost.vault", 0.0);
-        int xpLevels = Math.max(0, conf.getInt("cost.xp_levels", 0));
-        return player -> {
-            if (xpLevels > 0) {
-                if (player.getLevel() < xpLevels) {
-                    player.sendMessage(plugin.getLang().tr("death.need_xp", "levels", xpLevels));
-                    return false;
-                }
-            }
-            if (vault > 0 && !EconomyUtil.charge(plugin, player, vault)) {
-                player.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(vault)));
-                return false;
-            }
-            if (xpLevels > 0) player.setLevel(player.getLevel() - xpLevels);
-            return true;
-        };
+        // Spec 延后求值，这样 conf 被替换后能读到新值
+        return com.novamclabs.util.CostModel.asPayment(plugin, () -> com.novamclabs.util.CostModel.Spec.builder()
+                .money(com.novamclabs.util.CostModel.resolveMoney(plugin, conf, "deathback", "cost.vault", "cost.vault_cost"))
+                .xpLevels(com.novamclabs.util.CostModel.resolveXp(conf, "cost.xp_levels", "cost.xp_level_cost"))
+                .xpDeniedKey("death.need_xp")
+                .build());
     }
 
     private Location getLastDeath(Player p) {

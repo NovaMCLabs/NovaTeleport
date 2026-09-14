@@ -2,6 +2,8 @@ package com.novamclabs.toll;
 
 import com.novamclabs.StarTeleport;
 import com.novamclabs.menu.JavaMenuConfig;
+import com.novamclabs.util.BedrockFormsUtil;
+import com.novamclabs.util.BedrockUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
@@ -63,6 +65,10 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
         }
 
         if (args.length == 0) {
+            if (!player.hasPermission("novateleport.toll.use")) {
+                player.sendMessage(plugin.getLang().t("command.no_permission"));
+                return true;
+            }
             openMenu(player, false);
             return true;
         }
@@ -76,7 +82,7 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
                     return true;
                 }
                 if (args.length < 2) {
-                    player.sendMessage("§cUsage: /tollwarp create <name> [price]");
+                    player.sendMessage(plugin.getLang().t("toll.usage_create"));
                     return true;
                 }
                 double price = 0.0;
@@ -84,7 +90,7 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
                     try {
                         price = Double.parseDouble(args[2]);
                     } catch (NumberFormatException e) {
-                        player.sendMessage("§cPrice must be a number!");
+                        player.sendMessage(plugin.getLang().t("toll.price_not_number"));
                         return true;
                     }
                 }
@@ -97,7 +103,7 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
                     return true;
                 }
                 if (args.length < 2) {
-                    player.sendMessage("§cUsage: /tollwarp delete <name>");
+                    player.sendMessage(plugin.getLang().t("toll.usage_delete"));
                     return true;
                 }
                 manager.deleteWarp(player, args[1]);
@@ -109,14 +115,14 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
                     return true;
                 }
                 if (args.length < 3) {
-                    player.sendMessage("§cUsage: /tollwarp setprice <name> <price>");
+                    player.sendMessage(plugin.getLang().t("toll.usage_setprice"));
                     return true;
                 }
                 try {
                     double price = Double.parseDouble(args[2]);
                     manager.setPrice(player, args[1], price);
                 } catch (NumberFormatException e) {
-                    player.sendMessage("§cPrice must be a number!");
+                    player.sendMessage(plugin.getLang().t("toll.price_not_number"));
                 }
                 return true;
             }
@@ -142,7 +148,7 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
                     return true;
                 }
                 if (args.length < 2) {
-                    player.sendMessage("§cUsage: /tollwarp tp <name>");
+                    player.sendMessage(plugin.getLang().t("toll.usage_tp"));
                     return true;
                 }
                 manager.teleportToWarp(player, args[1]);
@@ -168,6 +174,17 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
         List<TollWarp> warps = mine ? manager.getPlayerWarps(player.getUniqueId()) : manager.getAllWarps();
         if (warps.isEmpty()) {
             player.sendMessage(plugin.getLang().t(mine ? "toll.no_own_warps" : "toll.no_warps"));
+            return;
+        }
+
+        if (BedrockUtil.isBedrock(player)) {
+            List<String> names = warps.stream().map(TollWarp::getName).collect(Collectors.toList());
+            // 点击执行 /tollwarp tp <name>，与 Java 版物品点击走同一条传送路径
+            boolean ok = BedrockFormsUtil.showListCommandForm(plugin, player, plugin.getLang().t("toll.menu.title"),
+                    names, names, "tollwarp tp");
+            if (!ok) {
+                player.sendMessage("§6" + plugin.getLang().t("toll.menu.title") + ": §f" + String.join(", ", names));
+            }
             return;
         }
 
@@ -232,10 +249,17 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String label, String[] args) {
         List<String> completions = new ArrayList<>();
+        // 传送点名称属于 toll.use 权限范围，无权限时不得通过补全泄露
+        boolean canUse = sender.hasPermission("novateleport.toll.use");
 
         if (args.length == 1) {
-            completions.addAll(List.of("create", "delete", "setprice", "list", "mywarps", "tp"));
-            completions.addAll(manager.getAllWarps().stream().map(TollWarp::getName).collect(Collectors.toList()));
+            if (canUse) {
+                completions.addAll(List.of("create", "delete", "setprice", "list", "mywarps", "tp"));
+                completions.addAll(manager.getAllWarps().stream().map(TollWarp::getName).collect(Collectors.toList()));
+            } else {
+                if (sender.hasPermission("novateleport.toll.create")) completions.addAll(List.of("create", "setprice"));
+                if (sender.hasPermission("novateleport.toll.delete")) completions.add("delete");
+            }
 
             return completions.stream()
                 .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(args[0].toLowerCase(Locale.ROOT)))
@@ -244,7 +268,12 @@ public class TollWarpCommand implements CommandExecutor, TabCompleter, Listener 
 
         if (args.length == 2) {
             String subCmd = args[0].toLowerCase(Locale.ROOT);
-            if (subCmd.equals("delete") || subCmd.equals("setprice") || subCmd.equals("tp")) {
+            boolean allowed;
+            if (subCmd.equals("delete")) allowed = sender.hasPermission("novateleport.toll.delete");
+            else if (subCmd.equals("setprice")) allowed = sender.hasPermission("novateleport.toll.create");
+            else if (subCmd.equals("tp")) allowed = canUse;
+            else allowed = false;
+            if (allowed) {
                 return manager.getAllWarps().stream()
                     .map(TollWarp::getName)
                     .filter(s -> s.toLowerCase(Locale.ROOT).startsWith(args[1].toLowerCase(Locale.ROOT)))

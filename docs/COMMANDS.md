@@ -11,6 +11,11 @@ enforced in code for `/gtp`, `/towntp`, `/tollwarp` and `/stele`.
   - Permission: `novateleport.admin`
   - Add `debug: true` under `general` in `config.yml` to make it persistent; the plugin does not
     rewrite `config.yml` (that would strip its comments).
+- `/novateleport <subcommand>` is also a router: it accepts `help`, `reload` (same as `/stp reload`)
+  and the name of any other command (`tpa`, `home`, `warp`, `rtp`, `city`, `stele`, `gtp`, `towntp`,
+  `tollwarp`, `tplog`, `forcetp`, `scroll`, `party`, `tpanimation`, …) and forwards it, so
+  `/ntp home base` behaves like `/home base`. Permission is checked on the routed command, not on
+  the router.
 
 ## Core teleport
 
@@ -34,7 +39,7 @@ enforced in code for `/gtp`, `/towntp`, `/tollwarp` and `/stele`.
 | `/deathback` | Teleport to last death location | `novateleport.command.back` |
 | `/rtp [now\|start\|radius]` | Random teleport (radius is clamped to the configured max) | `novateleport.command.rtp` |
 | `/rtpgui` | Open RTP GUI | `novateleport.command.rtp` |
-| `/tpmenu` | Open teleport menu | `novateleport.command.tpmenu` |
+| `/tpmenu` (alias: `/tpm`) | Open teleport menu | `novateleport.command.tpmenu` |
 | `/tpanimation select <magic\|tech\|natural>` | Select animation style | `novateleport.animation.select` |
 | `/scroll bind <home\|warp> <name>` | Bind a teleport scroll | `novateleport.scroll.bind` |
 | `/city` (alias: `/hub`) | City/hub teleport (local or proxy) | `novateleport.command.spawn` |
@@ -54,7 +59,7 @@ would break the YAML paths used for storage.
 | `/gtp warp <name>` | Teleport to a guild warp | `novateleport.guild.warp` |
 | `/gtp setwarp <name>` / `/gtp delwarp <name>` | Manage guild warps | `novateleport.guild.admin` |
 | `/gtp list` (`warps`) / `/gtp info` | List warps / show guild info | `novateleport.guild.use` |
-| `/tollwarp list` / `mywarps` | List public / own toll warps | `novateleport.toll.use` |
+| `/tollwarp` (alias: `/publichomes`) `list` / `mywarps` | List public / own toll warps | `novateleport.toll.use` |
 | `/tollwarp tp <name>` or `/tollwarp <name>` | Use a toll warp | `novateleport.toll.use` |
 | `/tollwarp create <name> [price]` / `setprice <name> <price>` | Create / re-price | `novateleport.toll.create` |
 | `/tollwarp delete <name>` | Delete (others' warps also need `novateleport.toll.delete.others`) | `novateleport.toll.delete` |
@@ -79,7 +84,14 @@ would break the YAML paths used for storage.
   records the pending arrival and teleports the player to the partner as soon as they connect.
   If the partner went offline in the meantime the arriving player stays at the join point.
 - Cross-server homes/warps are stored with the server name they were created on; using them switches
-  servers instead of teleporting locally.
+  servers instead of teleporting locally. The comparison is against `network.server_name`, which must
+  be **unique per backend**: two servers sharing a name discard each other's cross-server messages
+  silently (see FAQ Q16). `network.*` changes apply on `/stp reload`.
+- Cross-server switches bypass the local teleport pipeline, so the combat-tag and cooldown checks are
+  applied explicitly by `TeleportGates` before the `Connect` message is sent; a switch cannot be used
+  to escape a combat tag. Covered: the cross-server branches of `/home` and `/warp`, `/city` in
+  `proxy` mode, and cross-server `/tpa` / `/tpahere` (checked on the server of the player who is
+  actually travelling — the requester for `/tpa`, the target for `/tpahere`).
 - Cost caveat: a cross-server switch is the one case where the fee is charged *before* the transfer,
   because no local teleport happens. If the proxy ignores the `Connect` message (server not
   registered, `bungeecord` disabled, no proxy at all) the fee is not refunded.

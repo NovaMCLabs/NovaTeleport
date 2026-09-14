@@ -1,7 +1,7 @@
 package com.novamclabs.guild;
 
 import com.novamclabs.StarTeleport;
-import com.novamclabs.util.EconomyUtil;
+import com.novamclabs.storage.DataStore;
 import com.novamclabs.util.TeleportUtil;
 import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
@@ -11,6 +11,8 @@ import org.bukkit.entity.Player;
 
 import java.io.File;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 工会传送点管理器
@@ -19,16 +21,18 @@ import java.util.*;
 public class GuildWarpManager {
     private final StarTeleport plugin;
     private final GuildManager guildManager;
-    private final Map<String, List<GuildWarp>> guildWarps = new HashMap<>();
+    // 增删发生在命令发起者的区域线程，读取/传送发生在传送者的区域线程，必须线程安全
+    private final Map<String, List<GuildWarp>> guildWarps = new ConcurrentHashMap<>();
+    /** 「改内存 + 落盘」必须成对串行，否则两个区域线程会交叉写入同一份配置 */
+    private final Object dataLock = new Object();
 
     private File dataFile;
-    private FileConfiguration dataConfig;
+    private YamlConfiguration dataConfig;
 
     private boolean warpsEnabled;
     private int maxWarpsPerGuild;
     private boolean adminOnly;
     private int teleportDelaySeconds;
-    private double teleportCost;
 
     public GuildWarpManager(StarTeleport plugin, GuildManager guildManager) {
         this.plugin = plugin;
@@ -64,7 +68,7 @@ public class GuildWarpManager {
                     if (loc == null) continue;
 
                     GuildWarp warp = new GuildWarp(guildId, warpName, loc, createdBy);
-                    guildWarps.computeIfAbsent(guildId, k -> new ArrayList<>()).add(warp);
+                    guildWarps.computeIfAbsent(guildId, k -> new CopyOnWriteArrayList<>()).add(warp);
                 } catch (Exception e) {
                     plugin.getLogger().warning("[GuildWarp] Failed to load warp " + guildId + "." + warpName + ": " + e.getMessage());
                 }
@@ -74,7 +78,7 @@ public class GuildWarpManager {
 
     private void saveData() {
         try {
-            dataConfig.save(dataFile);
+            DataStore.atomicSave(dataConfig, dataFile);
         } catch (Exception e) {
             plugin.getLogger().severe("[GuildWarp] Failed to save data: " + e.getMessage());
         }
@@ -86,7 +90,6 @@ public class GuildWarpManager {
         this.maxWarpsPerGuild = cfg.getInt("warps.max_per_guild", 5);
         this.adminOnly = cfg.getBoolean("warps.admin_only", true);
         this.teleportDelaySeconds = cfg.getInt("warps.delay", 3);
-        this.teleportCost = cfg.getDouble("warps.cost", 0.0);
     }
 
     /**
@@ -122,13 +125,14 @@ public class GuildWarpManager {
         }
 
         GuildWarp warp = new GuildWarp(guildId, warpName, player.getLocation(), player.getName());
-        warps.add(warp);
-        guildWarps.put(guildId, warps);
+        synchronized (dataLock) {
+            guildWarps.computeIfAbsent(guildId, k -> new CopyOnWriteArrayList<>()).add(warp);
 
-        String path = "guilds." + guildId + "." + warpName;
-        dataConfig.set(path + ".location", warp.getLocation());
-        dataConfig.set(path + ".created_by", warp.getCreatedBy());
-        saveData();
+            String path = "guilds." + guildId + "." + warpName;
+            dataConfig.set(path + ".location", warp.getLocation());
+            dataConfig.set(path + ".created_by", warp.getCreatedBy());
+            saveData();
+        }
 
         player.sendMessage(plugin.getLang().tr("guild.warp_created", "name", warpName));
         return true;
@@ -167,8 +171,10 @@ public class GuildWarpManager {
             return false;
         }
 
-        dataConfig.set("guilds." + guildId + "." + warpName, null);
-        saveData();
+        synchronized (dataLock) {
+            dataConfig.set("guilds." + guildId + "." + warpName, null);
+            saveData();
+        }
 
         player.sendMessage(plugin.getLang().tr("guild.warp_deleted", "name", warpName));
         return true;
@@ -206,21 +212,12 @@ public class GuildWarpManager {
             return false;
         }
 
-        try {
-            if (plugin.getDataStore() != null) {
-                plugin.getDataStore().setBack(player.getUniqueId(), player.getLocation());
-            }
-        } catch (Exception ignored) {
-        }
-
         // 费用在传送真正执行时扣除，避免倒计时取消后白扣
-        TeleportUtil.Payment payment = teleportCost > 0 ? p -> {
-            if (!EconomyUtil.charge(plugin, p, teleportCost)) {
-                p.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(teleportCost)));
-                return false;
-            }
-            return true;
-        } : p -> true;
+        // 价格延后到扣费时读取，这样 /stp reload 与「全局默认值层」都能生效
+        TeleportUtil.Payment payment = com.novamclabs.util.CostModel.asPayment(plugin,
+                () -> com.novamclabs.util.CostModel.Spec.builder()
+                        .money(com.novamclabs.util.CostModel.resolveMoney(plugin, guildManager.getConfig(), "guild", "warps.cost"))
+                        .build());
 
         TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "guild", payment,
             () -> player.sendMessage(plugin.getLang().tr("guild.teleported_to_warp", "name", warpName)));

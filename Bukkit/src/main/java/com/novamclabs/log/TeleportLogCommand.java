@@ -81,11 +81,29 @@ public class TeleportLogCommand implements CommandExecutor, TabCompleter, Listen
         }
 
         if (args.length < 1) {
-            viewer.sendMessage("§cUsage: /tplog <player>");
+            viewer.sendMessage(plugin.getLang().t("tplog.usage"));
             return true;
         }
 
-        Player target = Bukkit.getPlayerExact(args[0]);
+        // 基岩版表单点击走这条路径；与 GUI 点击共用 rewind(...)
+        if (args.length >= 3 && args[0].equalsIgnoreCase("rewind")) {
+            Player target = com.novamclabs.util.BedrockUtil.findPlayer(args[1]);
+            if (target == null) {
+                viewer.sendMessage(plugin.getLang().t("tplog.player_offline"));
+                return true;
+            }
+            long time;
+            try {
+                time = Long.parseLong(args[2]);
+            } catch (NumberFormatException e) {
+                viewer.sendMessage(plugin.getLang().t("tplog.usage"));
+                return true;
+            }
+            rewind(viewer, target, time);
+            return true;
+        }
+
+        Player target = com.novamclabs.util.BedrockUtil.findPlayer(args[0]);
         if (target == null) {
             viewer.sendMessage(plugin.getLang().t("tplog.player_offline"));
             return true;
@@ -104,6 +122,26 @@ public class TeleportLogCommand implements CommandExecutor, TabCompleter, Listen
 
         Map<String, Object> placeholders = new HashMap<>();
         placeholders.put("player", target.getName());
+
+        if (com.novamclabs.util.BedrockUtil.isBedrock(viewer)) {
+            List<String> labels = new ArrayList<>();
+            List<String> args = new ArrayList<>();
+            for (TeleportLogEntry entry : logs) {
+                Location to = entry.to();
+                labels.add(plugin.getLang().tr("tplog.menu.entry",
+                    "time", timeFmt.format(Instant.ofEpochMilli(entry.timeMillis())),
+                    "type", entry.type(),
+                    "world", to.getWorld() != null ? to.getWorld().getName() : "world",
+                    "x", to.getBlockX(), "y", to.getBlockY(), "z", to.getBlockZ()));
+                args.add(target.getName() + " " + entry.timeMillis());
+            }
+            boolean ok = com.novamclabs.util.BedrockFormsUtil.showListCommandForm(plugin, viewer,
+                plugin.getLang().t("tplog.menu.title"), labels, args, "tplog rewind");
+            if (!ok) {
+                viewer.sendMessage("§6" + plugin.getLang().t("tplog.menu.title") + ": §f" + String.join(", ", labels));
+            }
+            return;
+        }
 
         JavaMenuConfig.Template tpl = menus.getTemplate("teleport_log");
         LogMenuHolder holder = new LogMenuHolder(target.getUniqueId());
@@ -176,26 +214,29 @@ public class TeleportLogCommand implements CommandExecutor, TabCompleter, Listen
             return;
         }
 
-        TeleportLogEntry entry = manager.getLogs(holder.target()).stream()
+        viewer.closeInventory();
+        rewind(viewer, target, time);
+    }
+
+    /** 回溯到某条日志的起点；GUI 点击与 /tplog rewind <player> <time> 共用同一实现 */
+    private void rewind(Player viewer, Player target, long time) {
+        TeleportLogEntry entry = manager.getLogs(target.getUniqueId()).stream()
             .filter(le -> le.timeMillis() == time)
             .findFirst()
             .orElse(null);
         if (entry == null) return;
 
-        viewer.closeInventory();
         Location from = entry.from();
         if (from == null || from.getWorld() == null) return;
 
-        try {
-            if (plugin.getDataStore() != null) {
-                plugin.getDataStore().setBack(target.getUniqueId(), target.getLocation());
-            }
-        } catch (Exception ignored) {
-        }
-
-        TeleportUtil.delayedTeleportWithAnimation(plugin, target, from, 0, "rewind", () -> {
-            viewer.sendMessage(plugin.getLang().t("tplog.rewind_done"));
-        });
+        TeleportUtil.delayedTeleportWithAnimation(plugin, target, from, 0, "rewind",
+                // 传送目标仍是 target，但费用由发起回溯的管理员承担；
+                // 管理员付不起时 checkAndCharge 会通知本人并返回 false，从而中止传送。
+                teleported -> com.novamclabs.util.CostModel.checkAndCharge(plugin, viewer,
+                        com.novamclabs.util.CostModel.fromGlobal(plugin, "rewind")),
+                () -> {
+                    viewer.sendMessage(plugin.getLang().t("tplog.rewind_done"));
+                });
     }
 
     private ItemStack tag(ItemStack it, String action, String value) {

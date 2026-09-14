@@ -16,13 +16,14 @@
 - **多种传送方式**: TPA、Home、Warp、RTP、Spawn、Back 等
 - **跨服传送**: BungeeCord / Velocity（代理侧无需安装插件）
 - **Folia 兼容**: 全部调度走 FoliaLib，在 Folia 上按区域线程执行
-- **经济系统**: Vault 集成，费用在传送真正执行时才扣除
+- **经济系统**: Vault 集成，费用在传送真正执行时才扣除；被第三方插件拦下时退回已扣的**金钱**（不退经验/物品）
 - **变量支持**: PlaceholderAPI 扩展 `%novateleport_*%`
-- **基岩版支持**: Floodgate/Geyser 玩家使用表单界面
-- **传送可取消**: 倒计时期间移动超过配置距离自动取消（不扣费）
+- **基岩版支持**: Floodgate 检测 + Form 表单界面，表单不可用时回退聊天文本
+- **传送可取消**: 倒计时期间移动超过配置距离自动取消（不扣费、不消耗冷却）
+- **玩法限制（可选，默认关闭）**: 战斗中禁止传送（判定双向，执行时复查）、受伤打断倒计时、按类型配置的传送冷却
 
 ### 🏰 领地集成 | Region Protection
-使用编译期依赖替代反射，适配器全部为可选软依赖（按类名逐个反射加载，任一插件缺席不会影响其他适配器）：
+适配器尽量使用编译期依赖（各领地插件的 API），但按类名逐个反射加载，任一插件缺席不会影响其他适配器：
 - WorldGuard 7.x（检查 ENTRY 标志）
 - PlotSquared 7.x
 - Residence（`tp` 标志）
@@ -74,9 +75,9 @@
 >
 > 粒子常量在 1.20.5 被整体改名，插件通过 `ParticleCompat` 在运行期解析新旧两种名字。
 
-### 已验证的第三方插件版本 | Verified integration versions
+### 第三方插件版本 | Third-party plugin versions
 
-以下版本是编译期依赖并已通过构建验证；更老的版本通常也能工作（适配器都做了存在性检测）。
+下表是插件使用的第三方 API 版本，绝大多数取自 `pom.xml`（`provided` 编译期依赖）；更老的版本通常也能工作（适配器都做了存在性检测）。带 `*` 的两项**不是编译期依赖，不经构建验证**：Residence 没有 Maven 构件、改走反射；Factions 只依赖 `ExternalPluginStubs/` 中的手写桩。
 
 | 插件 | 版本 | 集成内容 |
 |------|------|----------|
@@ -84,13 +85,13 @@
 | [PlaceholderAPI](https://github.com/PlaceholderAPI/PlaceholderAPI) | 2.12.3 | `%novateleport_*%` 占位符 |
 | [WorldGuard](https://github.com/EngineHub/WorldGuard) | 7.0.17 | 领地 ENTRY 标志 |
 | [PlotSquared](https://github.com/IntellectualSites/PlotSquared) | 7.6.0 | 地皮进出权限 |
-| Residence | 2.6.x | 领地 `tp` 标志 |
+| Residence * | 2.6.x | 领地 `tp` 标志 |
 | GriefDefender | 2.1.1-SNAPSHOT | Claim 信任等级 |
 | Lands | API 8.0.0 | 领地 `LAND_ENTER` 标志 |
 | [Towny](https://github.com/TownyAdvanced/Towny) | 0.103.2.6 | 领地 + 城镇传送 |
 | Guilds | 3.5.3.9 | 工会据点/传送点 |
 | SimpleClans | 2.16.0+ | 工会（宗族） |
-| FactionsUUID / SaberFactions | 4.1.9 | 工会（势力） |
+| FactionsUUID / SaberFactions * | 4.1.9 | 工会（势力） |
 | BetterTeams | 5.1.4 | 组队 |
 | Parties | API 3.2.17 | 组队（队伍名/成员同步） |
 | Floodgate | 2.2.x | 基岩版识别 |
@@ -100,27 +101,26 @@
 
 未安装的插件会被自动跳过（`softdepend` + 运行时存在性检测），不会报错。
 
-#### 实测环境 | Tested against
+#### 测试情况 | Testing status
 
-已在真实服务端启动验证（插件加载 + 适配器注册 + 命令响应均无异常）：
+CI（`.github/workflows/build.yml`）只执行 `mvn -B clean package`，**不会启动服务端**，
+因此没有任何版本组合经过自动化集成测试。集成插件（WorldGuard、PlotSquared、Towny、
+SimpleClans、Parties、BetterTeams、Guilds、Floodgate 等）只保证**按 `pom.xml` 锁定的版本编译通过**；
+运行期能否工作取决于服务端实际安装的版本，适配器都做了存在性检测，插件缺失时会被跳过而不报错。
 
-- **Paper 1.20.1（build 196，Java 17）** —— 验证 Java 17 字节码在 1.20.x 线可用
-- **Paper 1.21.4（build，Java 21）**
-- **Paper 26.2（build 123，Java 25）** + WorldGuard 7.0.17、WorldEdit 7.4.5、Towny 0.103.2.0、
-  SimpleClans 2.19.2、BetterTeams 5.1.4、Parties 3.2.14、VaultUnlocked 2.20.2、Floodgate 2.2.5、
-  PlaceholderAPI 2.12.3
-- **Folia 26.2（build 7，Java 25）** —— 启动日志确认 `[Scheduler] Folia=true`，
-  所有命令与定时任务在区域线程模型下均无 `UnsupportedOperationException`
-- **粒子兼容层** —— 解析逻辑单独跑在 spigot-api 1.20.1 与 26.2 上，9 个粒子在两侧都解析成功
+开发期间曾在 Paper 1.20.1 / 1.21.4 / 26.2 与 Folia 26.2 上手动启动做过冒烟验证
+（插件加载、适配器注册、命令响应无异常），但这属于人工验证，未纳入 CI，也无法由本仓库复现。
 
-Residence / Lands / FactionsUUID / GriefDefender / PlotSquared / Guilds 的适配器已按各自官方
-API 签名逐一核对后编译（Residence 的 `getInstance()`、Lands 的 `RoleSetting`、Factions 的
-`getFPlayers()` 返回类型等历史误用已修复），但这些插件的发行包只在其官网 / SpigotMC 分发，
-无法在本仓库的验证环境中自动下载实测。
+Floodgate / Cumulus 只验证了**插件加载与软依赖识别**，没有连接真实基岩客户端，
+因此基岩版的表单交互与粒子表现**未经端到端实测**。
+
+Lands / GriefDefender / PlotSquared / Guilds 的适配器已按各自官方 API 签名核对后编译（Lands 的
+`RoleSetting` 等历史误用已修复），但这些插件的发行包只在其官网 / SpigotMC 分发，无法在本仓库的
+验证环境中自动下载实测。
 
 Residence 与 Factions 各有**两支同名血脉且 API 形状相反**（Residence 现代版 6.x vs 旧版
-2.6.x；SaberFactions vs 上游 FactionsUUID）。编译期只能匹配其中一支，因此这些调用改为反射，
-运行时按实际安装的插件解析，两支都能工作。
+2.6.x；SaberFactions vs 上游 FactionsUUID）。两者都没有编译期依赖：Residence 全走反射，
+Factions 只靠 `ExternalPluginStubs/` 中的手写桩编译，运行时按实际安装的插件解析。
 
 ### 安装步骤 | Installation Steps
 
@@ -137,10 +137,13 @@ Residence 与 Factions 各有**两支同名血脉且 API 形状相反**（Reside
 - **代理（跨服）**：只需把 `NovaTeleport-Bukkit.jar` 放到各子服；
   - BungeeCord：开箱即用
   - Velocity：无需改配置（`velocity.toml` 的 `bungee-plugin-message-channel` 默认为 `true`）
-  - `network.server_name` 必须与各子服名称一致；跨服 TPA 还需启用 Redis
+  - `network.server_name` **每台子服必须唯一**且与代理中的名称一致：重名时双方会静默丢弃
+    对方的跨服消息（默认值 `local` 会在启动日志里收到警告）；跨服 TPA 还需启用 Redis
   - `NovaTeleport-Bungee.jar` / `NovaTeleport-Velocity.jar` 是**占位插件**（仅打印启动日志），
     跨服切换靠子服直接发送 `BungeeCord` 插件消息，代理侧无需安装
-- **基岩版**：安装 Floodgate（+ Cumulus）后自动启用表单界面；表单 API 不可用时回退为聊天菜单
+- **基岩版**：Floodgate 提供检测与表单 API；未安装时检测会回退为 Floodgate UUID 形状判断。
+  表单（`/tpa` 接受/拒绝、列表菜单、确认弹窗、RTP 半径滑块）受 `bedrock.forms.enabled` 控制，
+  发不出去时回退为聊天文本。**未在真机基岩客户端上做过端到端验证**
 - **Folia**：`folia-supported: true`，所有调度走区域线程；无需额外安装插件
 
 ---
@@ -185,6 +188,18 @@ commands:
   cancel_move_distance: 2.0
   move_cancel_exempt_types: [portal]
   block_interactions: false
+
+features:
+  animation_enabled: true               # 动画总开关
+  animation_particles: true             # 只关粒子
+  animation_sounds: true                # 只关音效
+  animation_effect_interval_ticks: 20   # 粒子/音效刷新间隔（只影响观感，不影响倒计时）
+  bedrock_particle_multiplier: 0.5      # 基岩版粒子数量倍率
+  animation_styles: { magic: true, tech: true, natural: true }
+
+bedrock:
+  forms:
+    enabled: true             # 基岩版表单总开关，关闭后一律走聊天文本
 
 economy:
   enabled: false
@@ -235,7 +250,7 @@ economy:
 | `/gtp warp <名称>` | 工会传送点 | `novateleport.guild.warp` |
 | `/gtp setwarp` / `/gtp delwarp <名称>` | 管理工会传送点 | `novateleport.guild.admin` |
 | `/gtp list` / `/gtp info` | 列表 / 工会信息 | `novateleport.guild.use` |
-| `/tollwarp list` / `/mywarps` / `/tp <名称>` | 使用付费传送点 | `novateleport.toll.use` |
+| `/tollwarp list` / `/tollwarp mywarps` / `/tollwarp tp <名称>` | 使用付费传送点（`/tollwarp` 别名 `/publichomes`） | `novateleport.toll.use` |
 | `/tollwarp create <名称> [价格]` / `setprice` | 创建 / 改价 | `novateleport.toll.create` |
 | `/tollwarp delete <名称>` | 删除（删除他人需 `novateleport.toll.delete.others`） | `novateleport.toll.delete` |
 | `/stele list\|locate\|travel` | 传送石碑 | `novateleport.stele.use` |
@@ -244,6 +259,7 @@ economy:
 | `/forcetp <玩家> <世界> <x> <y> <z>` | 强制传送（离线排队） | `novateleport.admin` |
 | `/stp reload` | 重载配置 | `novateleport.command.reload` |
 | `/novateleport debug on\|off`（别名 `/ntp`） | 开关调试日志（仅本次运行有效） | `novateleport.admin` |
+| `/ntp <子命令>` | 根命令同时是所有命令的路由（如 `/ntp home` 等于 `/home`，`/ntp reload` 等于 `/stp reload`） | 按被转发的命令校验 |
 
 完整列表见 [命令文档](docs/COMMANDS.md) 与 [权限文档](docs/PERMISSIONS.md)。
 
@@ -261,7 +277,7 @@ economy:
 
 <dependency>
     <groupId>com.github.novamclabs</groupId>
-    <artifactId>NovaTeleport</artifactId>
+    <artifactId>NovaTeleport-Bukkit</artifactId>
     <version>2.0-SNAPSHOT</version>
     <scope>provided</scope>
 </dependency>

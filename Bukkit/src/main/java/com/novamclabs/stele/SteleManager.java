@@ -36,8 +36,11 @@ import java.util.*;
 public class SteleManager implements Listener {
     private final StarTeleport plugin;
     private final File dataFile;
-    private YamlConfiguration index; // name -> location
-    private YamlConfiguration conf;  // steles.yml
+    // 索引/配置会被 reload 整体替换，且从多个区域线程与 Bedrock 回调线程读写，必须 volatile 保证可见性
+    private volatile YamlConfiguration index; // name -> location
+    private volatile YamlConfiguration conf;  // steles.yml
+    // 索引的「改 + 存」必须成对串行，否则并发写入会互相覆盖
+    private final Object indexLock = new Object();
 
     private final JavaMenuConfig menus;
     private final NamespacedKey keyAction;
@@ -76,14 +79,18 @@ public class SteleManager implements Listener {
             } catch (IllegalArgumentException ignored) {
             }
         }
-        conf = YamlConfiguration.loadConfiguration(f);
-
-        index = new YamlConfiguration();
+        YamlConfiguration newConf = YamlConfiguration.loadConfiguration(f);
+        YamlConfiguration newIndex = new YamlConfiguration();
         if (dataFile.exists()) {
             try {
-                index.load(dataFile);
+                newIndex.load(dataFile);
             } catch (Exception ignored) {
             }
+        }
+        // 在同一把锁里整体替换，避免与 setStele/removeStele 的「改 + 存」交错
+        synchronized (indexLock) {
+            conf = newConf;
+            index = newIndex;
         }
     }
 
@@ -92,6 +99,12 @@ public class SteleManager implements Listener {
     }
 
     public void saveIndex() {
+        synchronized (indexLock) {
+            saveIndexLocked();
+        }
+    }
+
+    private void saveIndexLocked() {
         try {
             index.save(dataFile);
         } catch (IOException ignored) {
@@ -112,16 +125,20 @@ public class SteleManager implements Listener {
     }
 
     public void setStele(String name, Location loc) {
-        index.set(name + ".world", Objects.requireNonNull(loc.getWorld()).getName());
-        index.set(name + ".x", loc.getX());
-        index.set(name + ".y", loc.getY());
-        index.set(name + ".z", loc.getZ());
-        saveIndex();
+        synchronized (indexLock) {
+            index.set(name + ".world", Objects.requireNonNull(loc.getWorld()).getName());
+            index.set(name + ".x", loc.getX());
+            index.set(name + ".y", loc.getY());
+            index.set(name + ".z", loc.getZ());
+            saveIndexLocked();
+        }
     }
 
     public void removeStele(String name) {
-        index.set(name, null);
-        saveIndex();
+        synchronized (indexLock) {
+            index.set(name, null);
+            saveIndexLocked();
+        }
     }
 
     @EventHandler
@@ -185,31 +202,21 @@ public class SteleManager implements Listener {
         int amt = conf.getInt("activation.item_amount", 1);
         int xp = Math.max(0, conf.getInt("activation.xp_level_cost", 0));
 
-        // 先校验经验等级，再扣除物品，避免经验不足时白扣物品
-        if (xp > 0 && p.getLevel() < xp) {
+        com.novamclabs.util.CostModel.Builder builder =
+                com.novamclabs.util.CostModel.Spec.builder().xpLevels(xp).xpDeniedKey("stele.need_xp");
+        if (itemSpec != null && !itemSpec.isEmpty() && amt > 0) {
+            builder.item(com.novamclabs.util.CostModel.ItemReq.of(itemSpec, amt));
+        }
+        com.novamclabs.util.CostModel.Spec spec = builder.build();
+
+        // 先校验全部再统一扣减：经验或物品任何一项不足都不会产生部分扣减
+        // （原实现在物品不够时会先把背包里的同类物品扣掉一部分再失败返回）
+        com.novamclabs.util.CostModel.Result result = com.novamclabs.util.CostModel.preflight(plugin, p, spec);
+        if (!result.ok()) {
+            com.novamclabs.util.CostModel.notifyDenied(plugin, p, spec, result);
             return false;
         }
-
-        boolean ok = true;
-        if (itemSpec != null && !itemSpec.isEmpty() && amt > 0) {
-            ItemStack need = ItemResolver.resolveItem(itemSpec);
-            if (need == null) return false;
-            int remain = amt;
-            for (ItemStack it : p.getInventory().getContents()) {
-                if (it == null) continue;
-                if (ItemResolver.matches(itemSpec, it)) {
-                    int use = Math.min(remain, it.getAmount());
-                    it.setAmount(it.getAmount() - use);
-                    remain -= use;
-                    if (remain <= 0) break;
-                }
-            }
-            if (remain > 0) ok = false;
-        }
-
-        if (!ok) return false;
-        if (xp > 0) p.setLevel(p.getLevel() - xp);
-        return true;
+        return com.novamclabs.util.CostModel.apply(plugin, p, spec, result);
     }
 
     private boolean isUnlocked(Player p, String key) {
@@ -228,20 +235,13 @@ public class SteleManager implements Listener {
 
     /** 石碑传送费用（steles.yml: teleport_cost）| stele travel cost */
     public com.novamclabs.util.TeleportUtil.Payment travelPayment() {
-        int xp = Math.max(0, conf.getInt("teleport_cost.xp_level_cost", 0));
-        double vault = conf.getDouble("teleport_cost.vault_cost", 0.0);
-        return player -> {
-            if (xp > 0 && player.getLevel() < xp) {
-                player.sendMessage(plugin.getLang().tr("stele.need_xp", "levels", xp));
-                return false;
-            }
-            if (vault > 0 && !com.novamclabs.util.EconomyUtil.charge(plugin, player, vault)) {
-                player.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", com.novamclabs.util.EconomyUtil.format(vault)));
-                return false;
-            }
-            if (xp > 0) player.setLevel(player.getLevel() - xp);
-            return true;
-        };
+        return com.novamclabs.util.CostModel.asPayment(plugin, () -> com.novamclabs.util.CostModel.Spec.builder()
+                .money(com.novamclabs.util.CostModel.resolveMoney(plugin, conf, "stele",
+                        "teleport_cost.vault_cost", "teleport_cost.vault"))
+                .xpLevels(com.novamclabs.util.CostModel.resolveXp(conf,
+                        "teleport_cost.xp_level_cost", "teleport_cost.xp_levels"))
+                .xpDeniedKey("stele.need_xp")
+                .build());
     }
 
     public void openSteleMenu(Player p) {
@@ -252,7 +252,10 @@ public class SteleManager implements Listener {
         }
 
         if (com.novamclabs.util.BedrockUtil.isBedrock(p)) {
-            com.novamclabs.util.BedrockFormsUtil.showListCommandForm(plugin, p, plugin.getLang().t("stele.menu"), names, "stele travel");
+            boolean ok = com.novamclabs.util.BedrockFormsUtil.showListCommandForm(plugin, p, plugin.getLang().t("stele.menu"), names, names, "stele travel");
+            if (!ok) {
+                p.sendMessage("§6" + plugin.getLang().t("stele.menu") + ": §f" + String.join(", ", names));
+            }
             return;
         }
 
@@ -299,11 +302,10 @@ public class SteleManager implements Listener {
             p.sendMessage(plugin.getLang().tr("stele.not_found", "name", name));
             return false;
         }
-        try {
-            if (plugin.getDataStore() != null) {
-                plugin.getDataStore().setBack(p.getUniqueId(), p.getLocation());
-            }
-        } catch (Exception ignored) {
+        // 激活是使用的前置条件：/stele travel、菜单、Bedrock 表单都汇聚到这里，因此只需在此处拦截
+        if (!isUnlocked(p, name)) {
+            p.sendMessage(plugin.getLang().t("stele.need_item_or_xp"));
+            return false;
         }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "stele", travelPayment(),

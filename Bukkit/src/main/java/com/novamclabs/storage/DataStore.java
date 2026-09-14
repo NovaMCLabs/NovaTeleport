@@ -24,7 +24,11 @@ public class DataStore {
     private final File homesFile;
     private final File warpsFile;
     private final File playersDir;
-    private String serverName = "local";
+    private final File configFile;
+
+    private volatile String serverName = "local";
+    /** config.yml 的最后修改时间，用来在 /stp reload 之后重新读取 network.server_name */
+    private volatile long serverNameStamp = -1L;
 
     private final YamlConfiguration homesCfg = new YamlConfiguration();
     private final YamlConfiguration warpsCfg = new YamlConfiguration();
@@ -42,6 +46,8 @@ public class DataStore {
         if (!playersDir.exists()) playersDir.mkdirs();
         this.homesFile = new File(dataFolder, "homes.yml");
         this.warpsFile = new File(dataFolder, "warps.yml");
+        this.configFile = new File(pluginDataFolder, "config.yml");
+        this.serverNameStamp = configFile.lastModified();
         try {
             if (!homesFile.exists()) homesFile.createNewFile();
             if (!warpsFile.exists()) warpsFile.createNewFile();
@@ -58,7 +64,23 @@ public class DataStore {
         if (serverName != null && !serverName.isEmpty()) this.serverName = serverName;
     }
 
-    public String getServerName() { return serverName; }
+    /**
+     * 当前服务器名。config.yml 被改动（例如 /stp reload）后自动重新读取，
+     * 否则已存储的 home/warp 仍带着旧标记，而 {@code TeleportCommandHandler.isRemoteServer}
+     * 读的是实时配置，两边不一致会把本服的家误判成跨服目标。
+     */
+    public String getServerName() {
+        if (configFile.lastModified() != serverNameStamp) reloadServerName();
+        return serverName;
+    }
+
+    /** 强制重新读取 network.server_name | re-read network.server_name from config.yml */
+    public synchronized void reloadServerName() {
+        serverNameStamp = configFile.lastModified();
+        if (!configFile.isFile()) return;
+        String name = YamlConfiguration.loadConfiguration(configFile).getString("network.server_name", "local");
+        if (name != null && !name.isEmpty()) serverName = name;
+    }
 
     /**
      * 校验家/传送点名称：不允许为空、过长或包含 YAML 路径分隔符（'.'）。
@@ -140,7 +162,7 @@ public class DataStore {
         if (key == null) throw new IllegalArgumentException("invalid home name");
         synchronized (homesLock) {
             Map<String, Object> data = serializeLocation(loc);
-            data.put("server", serverName);
+            data.put("server", getServerName());
             homesCfg.set(uuid.toString() + "." + key, data);
             atomicSave(homesCfg, homesFile);
         }
@@ -186,7 +208,7 @@ public class DataStore {
         if (key == null) throw new IllegalArgumentException("invalid warp name");
         synchronized (warpsLock) {
             Map<String, Object> data = serializeLocation(loc);
-            data.put("server", serverName);
+            data.put("server", getServerName());
             warpsCfg.set(key, data);
             atomicSave(warpsCfg, warpsFile);
         }
@@ -224,7 +246,8 @@ public class DataStore {
         ConfigurationSection sec = cfg.getConfigurationSection(path);
         if (sec == null) return null;
         Map<String, Object> map = sec.getValues(false);
-        String server = Objects.toString(map.getOrDefault("server", serverName));
+        Object stored = map.get("server");
+        String server = stored != null ? stored.toString() : getServerName();
         return new Destination(server, deserializeLocation(map));
     }
 
@@ -248,7 +271,15 @@ public class DataStore {
             File f = playerFile(uuid);
             YamlConfiguration cfg = new YamlConfiguration();
             if (f.exists()) {
-                try { cfg.load(f); } catch (Exception ignored) {}
+                try {
+                    cfg.load(f);
+                } catch (Exception e) {
+                    // 读取失败说明文件损坏或被占用；继续写回会用只含本次修改的配置覆盖它，
+                    // 顺带抹掉 back/death/animation/steles 等全部数据。宁可放弃这次写入。
+                    Bukkit.getLogger().warning("[DataStore] Failed to read " + f.getPath()
+                            + ", write skipped to avoid data loss: " + e.getMessage());
+                    return;
+                }
             }
             mutator.accept(cfg);
             try { atomicSave(cfg, f); } catch (IOException ignored) {}
@@ -262,7 +293,12 @@ public class DataStore {
         synchronized (lockFor(uuid)) {
             File f = playerFile(uuid);
             if (f.exists()) {
-                try { cfg.load(f); } catch (Exception ignored) {}
+                try {
+                    cfg.load(f);
+                } catch (Exception e) {
+                    Bukkit.getLogger().warning("[DataStore] Failed to read " + f.getPath()
+                            + ", treating as empty: " + e.getMessage());
+                }
             }
         }
         return cfg;

@@ -1,7 +1,6 @@
 package com.novamclabs.towny;
 
 import com.novamclabs.StarTeleport;
-import com.novamclabs.util.EconomyUtil;
 import com.novamclabs.util.TeleportUtil;
 import com.palmergames.bukkit.towny.TownyAPI;
 import com.palmergames.bukkit.towny.object.Resident;
@@ -24,8 +23,6 @@ public class TownyTeleportManager {
     private boolean enabled;
     private int homeDelay;
     private int otherDelay;
-    private double homeCost;
-    private double otherCost;
 
     public TownyTeleportManager(StarTeleport plugin) {
         this.plugin = plugin;
@@ -45,8 +42,6 @@ public class TownyTeleportManager {
         this.enabled = config.getBoolean("towny.enabled", false);
         this.homeDelay = config.getInt("towny.home_delay", 3);
         this.otherDelay = config.getInt("towny.other_delay", 5);
-        this.homeCost = config.getDouble("towny.home_cost", 0.0);
-        this.otherCost = config.getDouble("towny.other_cost", 10.0);
     }
 
     public boolean isEnabled() {
@@ -82,15 +77,8 @@ public class TownyTeleportManager {
                 return false;
             }
 
-            try {
-                if (plugin.getDataStore() != null) {
-                    plugin.getDataStore().setBack(player.getUniqueId(), player.getLocation());
-                }
-            } catch (Exception ignored) {
-            }
-
             TeleportUtil.delayedTeleportWithAnimation(plugin, player, spawnLoc, homeDelay, "towny",
-                costPayment(homeCost), () ->
+                costPayment("towny.home_cost"), () ->
                 player.sendMessage(plugin.getLang().tr("towny.teleported_to_town", "town", town.getName())));
 
             return true;
@@ -102,15 +90,11 @@ public class TownyTeleportManager {
     }
 
     /** 生成一个在传送时扣费的 Payment | build a Payment charged at teleport time */
-    private TeleportUtil.Payment costPayment(double cost) {
-        if (cost <= 0) return p -> true;
-        return p -> {
-            if (!EconomyUtil.charge(plugin, p, cost)) {
-                p.sendMessage(plugin.getLang().tr("economy.not_enough", "amount", EconomyUtil.format(cost)));
-                return false;
-            }
-            return true;
-        };
+    private TeleportUtil.Payment costPayment(String costPath) {
+        return com.novamclabs.util.CostModel.asPayment(plugin,
+                () -> com.novamclabs.util.CostModel.Spec.builder()
+                        .money(com.novamclabs.util.CostModel.resolveMoney(plugin, config, "towny", costPath))
+                        .build());
     }
 
     /**
@@ -141,15 +125,8 @@ public class TownyTeleportManager {
                 return false;
             }
 
-            try {
-                if (plugin.getDataStore() != null) {
-                    plugin.getDataStore().setBack(player.getUniqueId(), player.getLocation());
-                }
-            } catch (Exception ignored) {
-            }
-
             TeleportUtil.delayedTeleportWithAnimation(plugin, player, spawnLoc, otherDelay, "towny",
-                costPayment(otherCost), () ->
+                costPayment("towny.other_cost"), () ->
                 player.sendMessage(plugin.getLang().tr("towny.teleported_to_town", "town", town.getName())));
 
             return true;

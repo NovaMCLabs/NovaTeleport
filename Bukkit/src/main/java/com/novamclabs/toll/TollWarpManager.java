@@ -1,18 +1,20 @@
 package com.novamclabs.toll;
 
 import com.novamclabs.StarTeleport;
+import com.novamclabs.storage.DataStore;
 import com.novamclabs.util.EconomyUtil;
 import com.novamclabs.util.TeleportUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 
 import java.io.File;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 /**
@@ -26,11 +28,15 @@ public class TollWarpManager {
     }
 
     private final StarTeleport plugin;
-    private final Map<String, TollWarp> warps = new HashMap<>();
-    private final Map<UUID, List<String>> playerWarps = new HashMap<>();
+    // 增删改价在命令发起者的区域线程，incrementUsage 在传送者的区域线程（TeleportUtil 扣费回调），
+    // 不同玩家可能位于不同区域，因此这两个 Map 必须线程安全。
+    private final Map<String, TollWarp> warps = new ConcurrentHashMap<>();
+    private final Map<UUID, List<String>> playerWarps = new ConcurrentHashMap<>();
+    /** 「改内存 + 落盘」必须成对串行，否则两个区域线程会交叉写入同一份配置 */
+    private final Object dataLock = new Object();
 
     private File dataFile;
-    private FileConfiguration dataConfig;
+    private YamlConfiguration dataConfig;
 
     private FileConfiguration config;
 
@@ -92,7 +98,7 @@ public class TollWarpManager {
                         warp.incrementUsage();
                     }
                     warps.put(name.toLowerCase(Locale.ROOT), warp);
-                    playerWarps.computeIfAbsent(ownerId, k -> new ArrayList<>()).add(name);
+                    playerWarps.computeIfAbsent(ownerId, k -> new CopyOnWriteArrayList<>()).add(name);
                 }
             } catch (Exception e) {
                 plugin.getLogger().warning("[TollWarp] Failed to load warp " + key + ": " + e.getMessage());
@@ -102,7 +108,7 @@ public class TollWarpManager {
 
     private void saveData() {
         try {
-            dataConfig.save(dataFile);
+            DataStore.atomicSave(dataConfig, dataFile);
         } catch (Exception e) {
             plugin.getLogger().severe("[TollWarp] Failed to save data: " + e.getMessage());
         }
@@ -153,7 +159,15 @@ public class TollWarpManager {
             price = 0.0;
         }
 
-        if (warps.containsKey(warpName.toLowerCase(Locale.ROOT))) {
+        // 名称会作为 YAML 路径键写入，含 '.' 等字符会写坏数据，必须先规范化
+        String normalized = DataStore.normalizeName(warpName);
+        if (normalized == null) {
+            player.sendMessage(plugin.getLang().tr("warps.invalid_name", "name", warpName));
+            return false;
+        }
+        warpName = normalized;
+
+        if (warps.containsKey(warpName)) {
             player.sendMessage(plugin.getLang().tr("toll.name_exists", "name", warpName));
             return false;
         }
@@ -180,16 +194,17 @@ public class TollWarpManager {
         }
 
         TollWarp warp = new TollWarp(warpName, player.getUniqueId(), player.getLocation(), price);
-        warps.put(warpName.toLowerCase(Locale.ROOT), warp);
-        playerWarpList.add(warpName);
-        playerWarps.put(player.getUniqueId(), playerWarpList);
+        synchronized (dataLock) {
+            warps.put(warpName, warp);
+            playerWarps.computeIfAbsent(player.getUniqueId(), k -> new CopyOnWriteArrayList<>()).add(warpName);
 
-        dataConfig.set(warpName + ".owner", player.getUniqueId().toString());
-        dataConfig.set(warpName + ".location", warp.getLocation());
-        dataConfig.set(warpName + ".price", price);
-        dataConfig.set(warpName + ".enabled", true);
-        dataConfig.set(warpName + ".usage_count", 0);
-        saveData();
+            dataConfig.set(warpName + ".owner", player.getUniqueId().toString());
+            dataConfig.set(warpName + ".location", warp.getLocation());
+            dataConfig.set(warpName + ".price", price);
+            dataConfig.set(warpName + ".enabled", true);
+            dataConfig.set(warpName + ".usage_count", 0);
+            saveData();
+        }
 
         player.sendMessage(plugin.getLang().tr("toll.created", "name", warpName, "price", EconomyUtil.format(price)));
         return true;
@@ -199,7 +214,7 @@ public class TollWarpManager {
      * 删除付费传送点
      */
     public boolean deleteWarp(Player player, String warpName) {
-        TollWarp warp = warps.get(warpName.toLowerCase(Locale.ROOT));
+        TollWarp warp = lookup(warpName);
         if (warp == null) {
             player.sendMessage(plugin.getLang().tr("toll.not_found", "name", warpName));
             return false;
@@ -210,14 +225,17 @@ public class TollWarpManager {
             return false;
         }
 
-        warps.remove(warpName.toLowerCase(Locale.ROOT));
-        List<String> playerWarpList = playerWarps.get(warp.getOwnerId());
-        if (playerWarpList != null) {
-            playerWarpList.remove(warp.getName());
-        }
+        String key = DataStore.normalizeName(warpName);
+        synchronized (dataLock) {
+            warps.remove(key);
+            List<String> playerWarpList = playerWarps.get(warp.getOwnerId());
+            if (playerWarpList != null) {
+                playerWarpList.remove(warp.getName());
+            }
 
-        dataConfig.set(warp.getName(), null);
-        saveData();
+            dataConfig.set(warp.getName(), null);
+            saveData();
+        }
 
         player.sendMessage(plugin.getLang().tr("toll.deleted", "name", warp.getName()));
         return true;
@@ -227,7 +245,7 @@ public class TollWarpManager {
      * 设置传送点价格
      */
     public boolean setPrice(Player player, String warpName, double price) {
-        TollWarp warp = warps.get(warpName.toLowerCase(Locale.ROOT));
+        TollWarp warp = lookup(warpName);
         if (warp == null) {
             player.sendMessage(plugin.getLang().tr("toll.not_found", "name", warpName));
             return false;
@@ -252,9 +270,11 @@ public class TollWarpManager {
             return false;
         }
 
-        warp.setPrice(price);
-        dataConfig.set(warp.getName() + ".price", price);
-        saveData();
+        synchronized (dataLock) {
+            warp.setPrice(price);
+            dataConfig.set(warp.getName() + ".price", price);
+            saveData();
+        }
 
         player.sendMessage(plugin.getLang().tr("toll.price_updated", "name", warp.getName(), "price", EconomyUtil.format(price)));
         return true;
@@ -265,7 +285,7 @@ public class TollWarpManager {
      * Charges are settled at teleport time so a cancelled countdown never costs the player.
      */
     public boolean teleportToWarp(Player player, String warpName) {
-        TollWarp warp = warps.get(warpName.toLowerCase(Locale.ROOT));
+        TollWarp warp = lookup(warpName);
         if (warp == null) {
             player.sendMessage(plugin.getLang().tr("toll.not_found", "name", warpName));
             return false;
@@ -288,7 +308,8 @@ public class TollWarpManager {
         final TeleportUtil.Payment payment;
         final String doneKey;
         if (owner) {
-            payment = p -> true;
+            // 所有者传送同样计入使用次数（与 bypass/免费分支一致）；payment 每次传送只回调一次
+            payment = p -> { incrementUsage(warp); return true; };
             doneKey = "toll.teleported_owner";
         } else if (bypass) {
             payment = p -> { incrementUsage(warp); return true; };
@@ -301,13 +322,6 @@ public class TollWarpManager {
             doneKey = "toll.teleported_toll";
         }
 
-        try {
-            if (plugin.getDataStore() != null) {
-                plugin.getDataStore().setBack(player.getUniqueId(), player.getLocation());
-            }
-        } catch (Exception ignored) {
-        }
-
         TeleportUtil.delayedTeleportWithAnimation(plugin, player, warp.getLocation(), teleportDelaySeconds, "tollwarp", payment,
             () -> player.sendMessage(plugin.getLang().tr(doneKey, "name", warp.getName(), "price", EconomyUtil.format(price))));
         return true;
@@ -315,32 +329,30 @@ public class TollWarpManager {
 
     /** 支付传送费用：按比例分给所有者，其余作为服务器收入 | split the price between owner and server */
     private boolean payToll(Player player, TollWarp warp, double price) {
+        // 付费传送点要求经济可用；这与「经济没开就免费」的通用降级不同，是有意为之
         if (!EconomyUtil.isEnabled(plugin) || !EconomyUtil.hasProvider()) {
             player.sendMessage(plugin.getLang().t("economy.not_available"));
             return false;
         }
-        double balance = EconomyUtil.getBalance(player);
-        if (balance < price) {
-            player.sendMessage(plugin.getLang().tr("toll.insufficient_funds", "price", EconomyUtil.format(price)));
-            return false;
-        }
 
         OfflinePlayer owner = Bukkit.getOfflinePlayer(warp.getOwnerId());
-        double ownerFee = price * (ownerFeePercentage / 100.0);
-        ownerFee = Math.min(price, Math.max(0.0, ownerFee));
-        double serverFee = Math.max(0.0, price - ownerFee);
+        com.novamclabs.util.CostModel.Spec spec = com.novamclabs.util.CostModel.Spec.builder()
+                .money(price)
+                .split(owner, ownerFeePercentage)
+                .moneyDeniedKey("toll.insufficient_funds")
+                .build();
 
-        if (ownerFee > 0 && !EconomyUtil.transfer(plugin, player, owner, ownerFee)) {
+        com.novamclabs.util.CostModel.Result result = com.novamclabs.util.CostModel.preflight(plugin, player, spec);
+        if (!result.ok()) {
+            com.novamclabs.util.CostModel.notifyDenied(plugin, player, spec, result);
+            return false;
+        }
+        if (!com.novamclabs.util.CostModel.apply(plugin, player, spec, result)) {
             player.sendMessage(plugin.getLang().tr("toll.insufficient_funds", "price", EconomyUtil.format(price)));
             return false;
         }
-        if (serverFee > 0 && !EconomyUtil.charge(plugin, player, serverFee)) {
-            // 服务器手续费扣除失败：把已转给所有者的部分退回，避免玩家白付
-            if (ownerFee > 0) EconomyUtil.deposit(plugin, owner, ownerFee);
-            player.sendMessage(plugin.getLang().tr("toll.insufficient_funds", "price", EconomyUtil.format(price)));
-            return false;
-        }
 
+        double ownerFee = com.novamclabs.util.CostModel.recipientShare(spec);
         if (owner.isOnline() && owner.getPlayer() != null && ownerFee > 0) {
             owner.getPlayer().sendMessage(plugin.getLang().tr(
                 "toll.owner_received",
@@ -354,9 +366,11 @@ public class TollWarpManager {
     }
 
     private void incrementUsage(TollWarp warp) {
-        warp.incrementUsage();
-        dataConfig.set(warp.getName() + ".usage_count", warp.getUsageCount());
-        saveData();
+        synchronized (dataLock) {
+            warp.incrementUsage();
+            dataConfig.set(warp.getName() + ".usage_count", warp.getUsageCount());
+            saveData();
+        }
     }
 
     public List<TollWarp> getAllWarps() {
@@ -373,6 +387,12 @@ public class TollWarpManager {
     }
 
     public TollWarp getWarp(String name) {
-        return warps.get(name.toLowerCase(Locale.ROOT));
+        return lookup(name);
+    }
+
+    /** 名称先规范化再查找；非法名称（如含 '.'）永远不可能被存储，因此必然查不到 */
+    private TollWarp lookup(String rawName) {
+        String key = DataStore.normalizeName(rawName);
+        return key == null ? null : warps.get(key);
     }
 }

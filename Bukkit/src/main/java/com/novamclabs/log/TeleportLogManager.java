@@ -39,6 +39,16 @@ public class TeleportLogManager {
     // 因此队列必须是并发结构，否则会出现 ConcurrentModificationException / 丢数据。
     private final Map<UUID, Deque<TeleportLogEntry>> cache = new ConcurrentHashMap<>();
     private final Set<UUID> dirty = ConcurrentHashMap.newKeySet();
+    /**
+     * data（YamlConfiguration 内部是非并发 Map）与 cache 的整体重置只能单线程执行：
+     * flush 在全局线程、flushSync/loadData 在区域线程、record 在玩家区域线程，
+     * 三者交叉会丢记录甚至抛 ConcurrentModificationException。
+     */
+    private final Object stateLock = new Object();
+    /** 落盘串行化并用序号保证「最后一次写入胜出」，关服时的同步落盘不会被在途的旧 dump 覆盖 */
+    private final Object writeLock = new Object();
+    private long dumpSeq = 0;
+    private long persistedSeq = -1;
     private SchedulerWrapper.ScheduledTask flushTask;
 
     /** 每个玩家保留的最大条数 | max entries kept in memory per player */
@@ -78,7 +88,28 @@ public class TeleportLogManager {
 
     public void reloadAll() {
         reload();
+        // 先同步落盘，否则 loadData() 里的 cache.clear() 会静默丢弃尚未写出的记录
+        flushSync();
         loadData();
+    }
+
+    /** 同步落盘所有脏数据，不经过异步通道（关服 / 重载前调用）| synchronously persist dirty entries */
+    private void flushSync() {
+        final String dump;
+        final long seq;
+        synchronized (stateLock) {
+            if (data == null) return;
+            for (UUID uuid : new HashSet<>(dirty)) {
+                Deque<TeleportLogEntry> deque = cache.get(uuid);
+                if (deque == null || deque.isEmpty()) data.set(uuid.toString(), null);
+                else data.set(uuid.toString(), toRawList(deque));
+            }
+            dirty.clear();
+            dump = data.saveToString();
+            seq = ++dumpSeq;
+        }
+        // 同步写：序号更大，在途的旧 dump 会让位
+        persist(dump, seq);
     }
 
     public boolean isEnabled() {
@@ -90,74 +121,90 @@ public class TeleportLogManager {
     }
 
     private void loadData() {
-        this.dataFile = new File(plugin.getDataFolder(), "data/teleport_logs.yml");
-        if (!dataFile.getParentFile().exists()) dataFile.getParentFile().mkdirs();
-        if (!dataFile.exists()) {
-            try {
-                dataFile.createNewFile();
-            } catch (Exception ignored) {
-            }
-        }
-        this.data = YamlConfiguration.loadConfiguration(dataFile);
-        this.cache.clear();
-        this.dirty.clear();
-
-        for (String uuidStr : data.getKeys(false)) {
-            try {
-                UUID uuid = UUID.fromString(uuidStr);
-                List<Map<?, ?>> entries = data.getMapList(uuidStr);
-                Deque<TeleportLogEntry> deque = new ConcurrentLinkedDeque<>();
-                for (Map<?, ?> raw : entries) {
-                    Object t = raw.get("type");
-                    Object time = raw.get("time");
-                    Object from = raw.get("from");
-                    Object to = raw.get("to");
-                    if (!(t instanceof String) || !(time instanceof Number) || !(from instanceof Map) || !(to instanceof Map)) continue;
-                    Location fromLoc = DataStore.deserializeLocation(castMap(from));
-                    Location toLoc = DataStore.deserializeLocation(castMap(to));
-                    if (fromLoc == null || toLoc == null) continue;
-                    deque.add(new TeleportLogEntry(((Number) time).longValue(), ((String) t), fromLoc, toLoc));
+        synchronized (stateLock) {
+            this.dataFile = new File(plugin.getDataFolder(), "data/teleport_logs.yml");
+            if (!dataFile.getParentFile().exists()) dataFile.getParentFile().mkdirs();
+            if (!dataFile.exists()) {
+                try {
+                    dataFile.createNewFile();
+                } catch (Exception ignored) {
                 }
-                if (!deque.isEmpty()) cache.put(uuid, deque);
-            } catch (Exception ignored) {
             }
-        }
+            this.data = YamlConfiguration.loadConfiguration(dataFile);
+            this.cache.clear();
+            this.dirty.clear();
 
-        // 载入后按保留期裁剪一次 | trim once on load
-        Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
-        for (UUID uuid : new HashSet<>(cache.keySet())) {
-            Deque<TeleportLogEntry> deque = cache.get(uuid);
-            if (deque == null) continue;
-            if (deque.removeIf(e -> Instant.ofEpochMilli(e.timeMillis()).isBefore(cutoff))) {
-                dirty.add(uuid);
+            for (String uuidStr : data.getKeys(false)) {
+                try {
+                    UUID uuid = UUID.fromString(uuidStr);
+                    List<Map<?, ?>> entries = data.getMapList(uuidStr);
+                    Deque<TeleportLogEntry> deque = new ConcurrentLinkedDeque<>();
+                    for (Map<?, ?> raw : entries) {
+                        Object t = raw.get("type");
+                        Object time = raw.get("time");
+                        Object from = raw.get("from");
+                        Object to = raw.get("to");
+                        if (!(t instanceof String) || !(time instanceof Number) || !(from instanceof Map) || !(to instanceof Map)) continue;
+                        Location fromLoc = DataStore.deserializeLocation(castMap(from));
+                        Location toLoc = DataStore.deserializeLocation(castMap(to));
+                        if (fromLoc == null || toLoc == null) continue;
+                        deque.add(new TeleportLogEntry(((Number) time).longValue(), ((String) t), fromLoc, toLoc));
+                    }
+                    if (!deque.isEmpty()) cache.put(uuid, deque);
+                } catch (Exception ignored) {
+                }
             }
+
+            // 载入后按保留期裁剪一次 | trim once on load
+            Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
+            for (UUID uuid : new HashSet<>(cache.keySet())) {
+                Deque<TeleportLogEntry> deque = cache.get(uuid);
+                if (deque == null) continue;
+                if (deque.removeIf(e -> Instant.ofEpochMilli(e.timeMillis()).isBefore(cutoff))) {
+                    dirty.add(uuid);
+                }
+            }
+            if (!dirty.isEmpty()) flush();
         }
-        if (!dirty.isEmpty()) flush();
     }
 
     /**
      * 把脏数据合并进内存配置并异步落盘 | merge dirty entries and persist asynchronously
      */
     private void flush() {
-        if (data == null) return;
-        Set<UUID> batch = new HashSet<>(dirty);
-        if (batch.isEmpty()) return;
-        dirty.removeAll(batch);
+        final String dump;
+        final long seq;
+        synchronized (stateLock) {
+            if (data == null) return;
+            Set<UUID> batch = new HashSet<>(dirty);
+            if (batch.isEmpty()) return;
+            dirty.removeAll(batch);
 
-        Iterator<UUID> it = batch.iterator();
-        while (it.hasNext()) {
-            UUID uuid = it.next();
-            Deque<TeleportLogEntry> deque = cache.get(uuid);
-            if (deque == null || deque.isEmpty()) {
-                data.set(uuid.toString(), null);
-            } else {
-                data.set(uuid.toString(), toRawList(deque));
+            for (UUID uuid : batch) {
+                Deque<TeleportLogEntry> deque = cache.get(uuid);
+                if (deque == null || deque.isEmpty()) {
+                    data.set(uuid.toString(), null);
+                } else {
+                    data.set(uuid.toString(), toRawList(deque));
+                }
             }
+
+            // 序列化必须在持锁时完成，否则别的线程会一边改 data 一边被序列化
+            dump = data.saveToString();
+            seq = ++dumpSeq;
         }
 
-        // 序列化在主线程完成，文件 IO 交给异步线程
-        final String dump = data.saveToString();
-        plugin.getScheduler().runAsync(() -> writeAtomically(dump));
+        // 文件 IO 交给异步线程
+        plugin.getScheduler().runAsync(() -> persist(dump, seq));
+    }
+
+    /** 写盘入口：串行化并丢弃比已落盘版本更旧的 dump | serialise writes, stale dumps lose */
+    private void persist(String dump, long seq) {
+        synchronized (writeLock) {
+            if (seq < persistedSeq) return;
+            persistedSeq = seq;
+            writeAtomically(dump);
+        }
     }
 
     private static List<Map<String, Object>> toRawList(Deque<TeleportLogEntry> deque) {
@@ -194,15 +241,17 @@ public class TeleportLogManager {
         if (!logTypes.contains(t)) return;
 
         TeleportLogEntry entry = new TeleportLogEntry(System.currentTimeMillis(), t, from.clone(), to.clone());
-        Deque<TeleportLogEntry> deque = cache.computeIfAbsent(playerId, k -> new ConcurrentLinkedDeque<>());
-        deque.addFirst(entry);
+        synchronized (stateLock) {
+            Deque<TeleportLogEntry> deque = cache.computeIfAbsent(playerId, k -> new ConcurrentLinkedDeque<>());
+            deque.addFirst(entry);
 
-        Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
-        deque.removeIf(e -> Instant.ofEpochMilli(e.timeMillis()).isBefore(cutoff));
-        while (deque.size() > MAX_ENTRIES_PER_PLAYER) {
-            deque.removeLast();
+            Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
+            deque.removeIf(e -> Instant.ofEpochMilli(e.timeMillis()).isBefore(cutoff));
+            while (deque.size() > MAX_ENTRIES_PER_PLAYER) {
+                deque.removeLast();
+            }
+            dirty.add(playerId);
         }
-        dirty.add(playerId);
     }
 
     /** 插件关闭时同步落盘 | flush synchronously on shutdown */
@@ -211,14 +260,7 @@ public class TeleportLogManager {
             flushTask.cancel();
             flushTask = null;
         }
-        if (data == null) return;
-        for (UUID uuid : new HashSet<>(dirty)) {
-            Deque<TeleportLogEntry> deque = cache.get(uuid);
-            if (deque == null || deque.isEmpty()) data.set(uuid.toString(), null);
-            else data.set(uuid.toString(), toRawList(deque));
-        }
-        dirty.clear();
-        writeAtomically(data.saveToString());
+        flushSync();
     }
 
     public List<TeleportLogEntry> getLogs(UUID playerId) {

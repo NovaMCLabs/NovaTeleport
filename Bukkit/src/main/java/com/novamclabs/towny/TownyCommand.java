@@ -1,6 +1,8 @@
 package com.novamclabs.towny;
 
 import com.novamclabs.StarTeleport;
+import com.novamclabs.util.BedrockFormsUtil;
+import com.novamclabs.util.BedrockUtil;
 import com.palmergames.bukkit.towny.TownyAPI;
 import com.palmergames.bukkit.towny.object.Town;
 import org.bukkit.command.Command;
@@ -44,6 +46,17 @@ public class TownyCommand implements CommandExecutor, TabCompleter {
         // /towntp <townname> - 传送到指定城镇
         
         if (args.length == 0) {
+            // 基岩版无法输入城镇名，改为列出可传送的城镇（点击执行 /towntp <城镇>）
+            if (BedrockUtil.isBedrock(player) && player.hasPermission("novateleport.towny.other")) {
+                List<String> towns = townNames();
+                if (!towns.isEmpty()) {
+                    boolean ok = BedrockFormsUtil.showListCommandForm(plugin, player,
+                        plugin.getLang().t("towny.menu.title"), towns, towns, "towntp");
+                    if (ok) return true;
+                    player.sendMessage("§6" + plugin.getLang().t("towny.menu.title") + ": §f" + String.join(", ", towns));
+                    return true;
+                }
+            }
             // 传送到自己的城镇
             if (!player.hasPermission("novateleport.towny.home")) {
                 player.sendMessage(plugin.getLang().t("command.no_permission"));
@@ -63,6 +76,20 @@ public class TownyCommand implements CommandExecutor, TabCompleter {
         return true;
     }
     
+    /** 可选城镇名；Towny 是软依赖，取不到就当没有（表单/补全都退化为空） */
+    private List<String> townNames() {
+        try {
+            return TownyAPI.getInstance().getTowns().stream()
+                .map(Town::getName)
+                .filter(n -> n != null)
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .limit(50)
+                .collect(Collectors.toList());
+        } catch (Throwable ignored) {
+            return List.of();
+        }
+    }
+
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String label, String[] args) {
         if (!(sender instanceof Player)) {
@@ -78,16 +105,9 @@ public class TownyCommand implements CommandExecutor, TabCompleter {
 
         if (args.length == 1) {
             String prefix = args[0].toLowerCase(Locale.ROOT);
-            try {
-                return TownyAPI.getInstance().getTowns().stream()
-                    .map(Town::getName)
-                    .filter(n -> n != null && n.toLowerCase(Locale.ROOT).startsWith(prefix))
-                    .sorted(String.CASE_INSENSITIVE_ORDER)
-                    .limit(50)
-                    .collect(Collectors.toList());
-            } catch (Throwable ignored) {
-                return List.of();
-            }
+            return townNames().stream()
+                .filter(n -> n.toLowerCase(Locale.ROOT).startsWith(prefix))
+                .collect(Collectors.toList());
         }
 
         return List.of();

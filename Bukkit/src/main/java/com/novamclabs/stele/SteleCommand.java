@@ -22,14 +22,14 @@ public class SteleCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            sender.sendMessage("/stele list | locate | create <name> | remove <name> | travel <name>");
+            sender.sendMessage(plugin.getLang().t("stele.usage"));
             return true;
         }
         String sub = args[0].toLowerCase();
         switch (sub) {
             case "list": {
                 if (!requireUse(sender)) return true;
-                sender.sendMessage("Steles: " + String.join(", ", manager.listSteles()));
+                sender.sendMessage(plugin.getLang().tr("stele.list", "list", String.join(", ", manager.listSteles())));
                 return true;
             }
             case "locate": {
@@ -40,22 +40,22 @@ public class SteleCommand implements CommandExecutor {
                 String nearest = manager.listSteles().stream().min(Comparator.comparingDouble(n -> {
                     Location l = manager.getSteleLocation(n); if (l == null || !l.getWorld().equals(me.getWorld())) return Double.MAX_VALUE; return l.distanceSquared(me);
                 })).orElse(null);
-                if (nearest == null) { p.sendMessage(plugin.getLang().t("stele.none")); } else { p.sendMessage("Nearest: " + nearest); }
+                if (nearest == null) { p.sendMessage(plugin.getLang().t("stele.none")); } else { p.sendMessage(plugin.getLang().tr("stele.nearest", "name", nearest)); }
                 return true;
             }
             case "create": {
                 if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
-                if (!(sender instanceof Player) || args.length < 2) { sender.sendMessage("/stele create <name>"); return true; }
+                if (!(sender instanceof Player) || args.length < 2) { sender.sendMessage(plugin.getLang().t("stele.usage_create")); return true; }
                 Player p = (Player) sender;
                 String name = args[1];
                 manager.setStele(name, p.getLocation());
-                sender.sendMessage("Created stele: " + name);
+                sender.sendMessage(plugin.getLang().tr("stele.created", "name", name));
                 return true;
             }
             case "remove": {
                 if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
-                if (args.length < 2) { sender.sendMessage("/stele remove <name>"); return true; }
-                manager.removeStele(args[1]); sender.sendMessage("Removed."); return true;
+                if (args.length < 2) { sender.sendMessage(plugin.getLang().t("stele.usage_remove")); return true; }
+                manager.removeStele(args[1]); sender.sendMessage(plugin.getLang().t("stele.removed")); return true;
             }
             case "travel": {
                 if (!requireUse(sender)) return true;
@@ -67,7 +67,7 @@ public class SteleCommand implements CommandExecutor {
             }
             case "activatefor": {
                 if (!sender.hasPermission("novateleport.admin")) { sender.sendMessage(plugin.getLang().t("command.no_permission")); return true; }
-                if (args.length < 3) { sender.sendMessage("/stele activatefor <player> <key>"); return true; }
+                if (args.length < 3) { sender.sendMessage(plugin.getLang().t("stele.usage_activatefor")); return true; }
                 Player target = Bukkit.getPlayerExact(args[1]);
                 if (target == null) { sender.sendMessage(plugin.getLang().t("common.no_online_player")); return true; }
                 final String key = args[2];
@@ -78,11 +78,11 @@ public class SteleCommand implements CommandExecutor {
                         cfg.set("steles.unlocked", unlocked);
                     }
                 });
-                sender.sendMessage("Unlocked for " + target.getName());
+                sender.sendMessage(plugin.getLang().tr("stele.unlocked_for", "player", target.getName()));
                 return true;
             }
             default:
-                sender.sendMessage("/stele list | locate | create <name> | remove <name> | travel <name>");
+                sender.sendMessage(plugin.getLang().t("stele.usage"));
                 return true;
         }
     }

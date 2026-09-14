@@ -2,12 +2,16 @@ package com.novamclabs.animations;
 
 import com.novamclabs.StarTeleport;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class AnimationManager {
+public class AnimationManager implements Listener {
     public enum Style {
         MAGIC,
         TECH,
@@ -31,28 +35,45 @@ public class AnimationManager {
     }
 
     private final StarTeleport plugin;
-    private final Map<UUID, Style> styles = new ConcurrentHashMap<>();
+    /** 玩家自己存过的样式 | styles explicitly stored by the player */
+    private final Map<UUID, Style> storedStyles = new ConcurrentHashMap<>();
+    /** 「查过 YAML，确认没存过样式」的玩家。存的是这个事实而不是解析结果，
+     *  否则 /stp reload 改了 animations.default_style 后老玩家会一直用旧默认值 */
+    private final Set<UUID> noStoredStyle = ConcurrentHashMap.newKeySet();
 
     public AnimationManager(StarTeleport plugin) {
         this.plugin = plugin;
+        plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
     public Style getStyle(Player player) {
-        Style s = styles.get(player.getUniqueId());
+        UUID uuid = player.getUniqueId();
+        if (noStoredStyle.contains(uuid)) return getDefaultStyle();
+        Style s = storedStyles.get(uuid);
         if (s != null) return s;
-        // 从玩家数据文件读取
-        String name = plugin.getDataStore().getPlayerString(player.getUniqueId(), "animation.style");
-        if (name != null) {
-            s = Style.fromString(name, getDefaultStyle());
-            styles.put(player.getUniqueId(), s);
-            return s;
+        // 未存过样式的玩家也要缓存（查过这一事实），否则倒计时每秒都会重读一次玩家 YAML
+        String name = plugin.getDataStore().getPlayerString(uuid, "animation.style");
+        Style parsed = Style.fromString(name, null);
+        if (parsed == null) {
+            noStoredStyle.add(uuid);
+            return getDefaultStyle();
         }
-        return getDefaultStyle();
+        storedStyles.put(uuid, parsed);
+        return parsed;
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        UUID uuid = event.getPlayer().getUniqueId();
+        storedStyles.remove(uuid);
+        noStoredStyle.remove(uuid);
     }
 
     public void setStyle(Player player, Style style) {
-        styles.put(player.getUniqueId(), style);
-        plugin.getDataStore().setPlayerValue(player.getUniqueId(), "animation.style", style.key());
+        UUID uuid = player.getUniqueId();
+        noStoredStyle.remove(uuid);
+        storedStyles.put(uuid, style);
+        plugin.getDataStore().setPlayerValue(uuid, "animation.style", style.key());
     }
 
     public Style getDefaultStyle() {
