@@ -563,6 +563,31 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         return true;
     }
 
+    /**
+     * 随机传送取点的唯一实现，三个入口共用：命令行 /rtp、基岩半径表单、Java GUI 的 start。
+     * 顺序是「按半径现算 → 坐标池兜底 → 默认半径现算」：按半径扫描会跳过未加载区块，
+     * 半径一大就可能一个候选都命中不了，池里的点是已生成的合法落点，用它兜底优于直接失败。
+     * 三条入口必须共用，否则同一次点击会因入口不同而有不同的成功率。
+     *
+     * One destination lookup shared by all three RTP entry points (command, Bedrock form, Java GUI).
+     * Radius scan first because the requested radius is authoritative; the pre-generated pool is
+     * only a fallback, since its points can lie outside the requested radius but still beat failing.
+     */
+    private org.bukkit.Location randomDestination(Player p, int radius) {
+        World world = p.getWorld();
+        org.bukkit.Location dest = null;
+        if (radius > 0) {
+            dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random(), radius);
+        }
+        if (dest == null && plugin.getRtpPoolManager() != null) {
+            dest = plugin.getRtpPoolManager().poll(world);
+        }
+        if (dest == null) {
+            dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random());
+        }
+        return dest;
+    }
+
     private boolean handleRtp(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) { sender.sendMessage(plugin.getLang().t("common.only_player")); return true; }
         if (!requirePermission(sender, "novateleport.command.rtp")) return true;
@@ -574,24 +599,17 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         World world = p.getWorld();
         int maxRadius = com.novamclabs.util.RTPUtil.loadSettings(plugin, world).radius;
         int radius = -1;
-        if (args.length >= 1) {
-            if (args[0].equalsIgnoreCase("now") || args[0].equalsIgnoreCase("start")) {
-                // keep radius default
-            } else {
-                try { radius = Integer.parseInt(args[0]); } catch (Exception ignored) {}
+        if (!args[0].equalsIgnoreCase("now") && !args[0].equalsIgnoreCase("start")) {
+            try {
+                radius = Integer.parseInt(args[0]);
+            } catch (Exception ignored) {
+                // 参数写错时不能当作「没写」静默按默认半径传送：玩家会以为半径生效了
+                p.sendMessage(plugin.getLang().t("usage.rtp"));
+                return true;
             }
         }
         if (radius > maxRadius) radius = maxRadius;
-        Location dest = null;
-        if (radius > 0) {
-            dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random(), radius);
-        }
-        if (dest == null && plugin.getRtpPoolManager() != null) {
-            dest = plugin.getRtpPoolManager().poll(world);
-        }
-        if (dest == null) {
-            dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, world, new Random());
-        }
+        Location dest = randomDestination(p, radius);
         if (dest == null) { p.sendMessage(plugin.getLang().t("rtp.no_safe")); return true; }
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "rtp", () -> p.sendMessage(plugin.getLang().t("rtp.done")));
@@ -609,7 +627,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             int max = com.novamclabs.util.RTPUtil.loadSettings(plugin, p.getWorld()).radius;
             boolean sent = com.novamclabs.util.BedrockFormsUtil.showRtpRadiusForm(plugin, p, current, step, max, (val) -> {
                 rtpRadiusChoices.put(p.getUniqueId(), val);
-                org.bukkit.Location dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, p.getWorld(), new java.util.Random(), val);
+                org.bukkit.Location dest = randomDestination(p, val);
                 if (dest == null) {
                     p.sendMessage(plugin.getLang().t("rtp.no_safe"));
                 } else {
@@ -838,8 +856,7 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
             case "rtp_start" -> {
                 p.closeInventory();
                 int radius = rtpRadiusChoices.getOrDefault(p.getUniqueId(), plugin.getConfig().getInt("rtp.radius", 2000));
-                java.util.Random rnd = new java.util.Random();
-                org.bukkit.Location dest = com.novamclabs.util.RTPUtil.findSafeLocation(plugin, p.getWorld(), rnd, radius);
+                org.bukkit.Location dest = randomDestination(p, radius);
                 if (dest == null) {
                     p.sendMessage(plugin.getLang().t("rtp.no_safe"));
                     return;

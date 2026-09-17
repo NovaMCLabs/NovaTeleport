@@ -3,6 +3,11 @@ max_members: 4
 invite_expire_seconds: 120
 teleport_delay: 5
 # 名称显示 | Name display
+# 前缀默认取自语言文件（party.prefix.leader / party.prefix.member），
+# 因此会跟随 config.yml 的 general.language；写死在这里会把文案固定住，
+# 英文服也会显示中文。
+# Leave these commented out to use the language file (follows general.language);
+# setting a literal here pins the text regardless of language.
 display:
-  leader_prefix: "§6[队长] "
-  member_prefix: "§a[队友] "
+  # leader_prefix: "§6[队长] "
+  # member_prefix: "§a[队友] "

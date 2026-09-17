@@ -82,6 +82,10 @@ public class PartyCommand implements CommandExecutor {
                 inv.from = p.getUniqueId();
                 inv.to = target.getUniqueId();
                 inv.expireAt = System.currentTimeMillis() + manager.getInviteExpireSeconds() * 1000L;
+                // 过期邀请平时没人清理（没有 decline 子命令），每发一次新邀请顺手清一遍，
+                // 否则长期运行的服务器会为每个从未接受的邀请永久保留一条
+                long now = System.currentTimeMillis();
+                invites.values().removeIf(i -> i.expireAt < now);
                 invites.put(inv.to, inv);
                 p.sendMessage(plugin.getLang().tr("party.invited.sender", "target", target.getName()));
                 target.sendMessage(plugin.getLang().tr("party.invited.target", "sender", p.getName()));

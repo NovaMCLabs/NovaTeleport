@@ -88,9 +88,9 @@ public class RtpPoolManager {
         //    也就是主线程执行（见 SchedulerWrapper#runAtLocation 的注释与
         //    SpigotImplementation.runNextTick）。所以回调里的任何开销都是 main-thread 开销。
         // 2) getHighestBlockYAt 会同步加载并生成目标区块（Level.getChunk ->
-        //    ServerChunkCache.getChunk，未生成时阻塞式冷生成）。默认 rtp.yml 的
-        //    min_radius=500/max_radius=5000 让采样点几乎总是落在未生成区块上，一次采样
-        //    就足以长时间阻塞主线程并触发看门狗。
+        //    ServerChunkCache.getChunk，未生成时阻塞式冷生成）。采样半径一旦超出玩家已探索
+        //    的范围（曾经的默认值 min_radius=500/max_radius=5000 就是如此），采样点就会
+        //    几乎总是落在未生成区块上，一次采样就足以长时间阻塞主线程并触发看门狗。
         // 因此这里只取已加载区块中的坐标，未加载就重采样/放弃本轮，绝不请求区块生成。
         //
         // NOTE: runAtLocation is a Folia concept; FoliaLib maps it to runNextTick (main thread)

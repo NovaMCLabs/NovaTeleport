@@ -53,6 +53,12 @@ public class TeleportLogManager {
 
     /** 每个玩家保留的最大条数 | max entries kept in memory per player */
     private static final int MAX_ENTRIES_PER_PLAYER = 200;
+    /**
+     * 内存里最多保留多少个玩家的日志条目。只是缓存上限，磁盘上的记录不受影响
+     * （只在 cache 超限时逐出，record 走的路径不会因为达到这个数就把记录丢掉）。
+     * | memory-only cap; an evicted player's on-disk entries are left untouched
+     */
+    private static final int MAX_CACHED_PLAYERS = 2000;
 
     public TeleportLogManager(StarTeleport plugin) {
         this.plugin = plugin;
@@ -251,6 +257,34 @@ public class TeleportLogManager {
                 deque.removeLast();
             }
             dirty.add(playerId);
+            // 记录本身永远不删（/tplog rewind 要靠它回溯），但内存缓存必须限容：
+            // cache 只对最近见过的 UUID 保留条目，否则一个从不再回服的玩家会把整份记录一直压在堆里。
+            // 逐出后磁盘上的内容不变，retention 仍由 flush 时的时间裁剪负责。
+            evictIfOverCapacity(playerId);
+        }
+    }
+
+    /**
+     * cache 达到上限时逐出「缓存条目最多」的玩家（当前玩家除外）。
+     * 调用方已持有 stateLock，所以与 flush/loadData 互斥：不会出现「刚把 cache 项置空、flush 又把它写回磁盘」的竞争。
+     */
+    private void evictIfOverCapacity(UUID current) {
+        if (cache.size() <= MAX_CACHED_PLAYERS) return;
+        int evicted = 0;
+        while (cache.size() > MAX_CACHED_PLAYERS) {
+            UUID victim = null;
+            int worst = -1;
+            for (Map.Entry<UUID, Deque<TeleportLogEntry>> e : cache.entrySet()) {
+                if (e.getKey().equals(current)) continue;
+                int n = e.getValue().size();
+                if (n > worst) { worst = n; victim = e.getKey(); }
+            }
+            if (victim == null) break;
+            cache.remove(victim);
+            // 不能再改动 dirty：这里碰 data 会触发 YamlConfiguration 的惰性序列化，而此刻可能正持有 dirLock，
+            // 有死锁风险。逐出只丢内存副本，磁盘内容与下次 flush 都保持原样。
+            evicted++;
+            if (evicted >= 64) break; // 单次逐出上限，避免 O(n^2) 卡住调用线程
         }
     }
 

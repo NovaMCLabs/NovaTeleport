@@ -13,14 +13,15 @@ worlds:
     # （未加载的区块会被跳过，绝不为了传送而同步生成区块，否则会卡死服务器主线程）。
     # 因此在全新服务器上（默认视距 10 区块 ≈ 出生点周围 160 格），如果 min_radius 远大于
     # 已探索范围，/rtp 会找不到落点并提示 rtp.no_safe，直到玩家向外探索或使用区块预生成插件。
-    # 想让 /rtp 在全新世界即可用，请把半径收窄到已探索范围内（例如 64/512）。
+    # 默认值 64/512 即落在全新世界的已探索范围内，/rtp 开箱即用；调大半径前请先扩大探索范围，
+    # 否则会重新回到上面的 rtp.no_safe 情形。
     #
     # NOTE: /rtp and the coordinate pool only ever land in chunks that are ALREADY generated —
     # unloaded candidates are skipped rather than synchronously generated (that would freeze the
     # tick thread). On a fresh world this means the radius must stay inside the explored area,
     # otherwise /rtp reports rtp.no_safe.
-    min_radius: 500
-    max_radius: 5000
+    min_radius: 64
+    max_radius: 512
     biome_blacklist:
       - "OCEAN"
       - "DEEP_OCEAN"

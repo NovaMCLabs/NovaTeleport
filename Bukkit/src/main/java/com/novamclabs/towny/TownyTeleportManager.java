@@ -19,10 +19,12 @@ import java.io.File;
 public class TownyTeleportManager {
     private final StarTeleport plugin;
 
-    private FileConfiguration config;
-    private boolean enabled;
-    private int homeDelay;
-    private int otherDelay;
+    // /stp reload 在某个区域线程上整体重写这组字段，而传送请求可能来自其他区域线程：
+    // 非 volatile 时读者会无限期读到旧值（见 death/DeathManager 的同类处理）
+    private volatile FileConfiguration config;
+    private volatile boolean enabled;
+    private volatile int homeDelay;
+    private volatile int otherDelay;
 
     public TownyTeleportManager(StarTeleport plugin) {
         this.plugin = plugin;

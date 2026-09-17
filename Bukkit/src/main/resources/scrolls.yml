@@ -3,4 +3,8 @@
 
 bound:
   material: PAPER
-  name: "§a传送卷轴: §f{target}"
+  # 卷轴显示名。留空（注释掉本行）则使用语言文件里的 scroll.bound.default_name，
+  # 这样会跟随 config.yml 的 general.language；写死在这里会让英文服显示中文。
+  # Leave this commented out to use the language file (follows general.language);
+  # a literal here would show Chinese on an English server.
+  # name: "§a传送卷轴: §f{target}"

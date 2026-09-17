@@ -396,6 +396,8 @@ public class StarTeleport extends JavaPlugin implements Listener, CommandExecuto
         if (session != null) {
             if (session.cancelOnMove && hasMovedTooFar(event, session.origin)) {
                 cancelTeleport(player, true);
+                // Title 只是一闪而过，聊天栏再给出原因：否则玩家只看到倒计时消失，不知道是自己移动导致的
+                player.sendMessage(lang.t("teleport.cancelled.title"));
                 if (debug) {
                     getLogger().log(Level.INFO, lang.tr("debug.cancel_due_to_move", "player", player.getName()));
                 }

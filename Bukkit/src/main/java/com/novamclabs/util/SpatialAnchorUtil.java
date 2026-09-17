@@ -32,6 +32,11 @@ public final class SpatialAnchorUtil {
         return false;
     }
 
+    /**
+     * 读取目标脚下的方块布局。会读方块，因此在 Folia 上**必须在目标所属区域线程**调用
+     * （走 {@link RegionGuardUtil#checkDestination}），否则就是跨区域访问。
+     * Reads blocks, so on Folia it must run on the destination's owning region thread.
+     */
     public static boolean hasAnchor(StarTeleport plugin, Location destination) {
         if (destination == null || destination.getWorld() == null) {
             return false;

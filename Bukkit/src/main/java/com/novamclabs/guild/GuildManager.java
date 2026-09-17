@@ -17,13 +17,18 @@ import java.util.logging.Level;
  */
 public class GuildManager {
     private final StarTeleport plugin;
-    private final List<GuildAdapter> adapters = new ArrayList<>();
+    // 适配器列表在 reload 时整体替换：若像原来那样 add 到同一个 ArrayList，其他区域线程
+    // 正在 for-each 迭代时会 ConcurrentModificationException / 看到半填状态。
+    // 全部构建完再一次性 volatile 赋值，读者只会看到旧列表或新列表。
+    private volatile List<GuildAdapter> adapters = new ArrayList<>();
 
     /** 同一个方法的报错只输出一次 | log each failing call site once */
     private static final Set<String> LOGGED = ConcurrentHashMap.newKeySet();
 
-    private FileConfiguration config;
-    private boolean enabled;
+    // /stp reload 会在某个区域线程上替换这两个字段，而读取发生在各区域线程：非 volatile 时读者
+    // 可能长期停留在旧配置上（见 death/DeathManager 的同类处理）
+    private volatile FileConfiguration config;
+    private volatile boolean enabled;
 
     public GuildManager(StarTeleport plugin) {
         this.plugin = plugin;
@@ -69,6 +74,8 @@ public class GuildManager {
             }
         }
 
+        // 先构建到局部列表，最后一次性发布：读者不会看到「注册到一半」的列表
+        List<GuildAdapter> built = new ArrayList<>();
         for (String[] entry : GUILD_ADAPTERS) {
             String name = entry[0];
             if (filter && !allowSet.contains(name.toLowerCase(Locale.ROOT))) {
@@ -83,7 +90,7 @@ public class GuildManager {
             }
             try {
                 if (adapter.isPresent()) {
-                    adapters.add(adapter);
+                    built.add(adapter);
                     plugin.getLogger().info("[Guild] Registered adapter: " + adapter.name());
                 }
             } catch (Throwable t) {
@@ -91,7 +98,8 @@ public class GuildManager {
             }
         }
 
-        if (adapters.isEmpty()) {
+        this.adapters = built;
+        if (built.isEmpty()) {
             plugin.getLogger().info("[Guild] No guild plugins detected.");
         }
     }
@@ -99,6 +107,8 @@ public class GuildManager {
     public void reload() {
         loadConfig();
         this.enabled = config.getBoolean("enabled", false);
+        // 插件列表也来自配置：不在 reload 时重建的话，改 plugins 列表要重启才生效（且旧列表会被并发读到）
+        registerAdapters();
     }
 
     public FileConfiguration getConfig() {

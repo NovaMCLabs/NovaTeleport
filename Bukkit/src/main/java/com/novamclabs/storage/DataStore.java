@@ -13,6 +13,11 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
@@ -33,11 +38,58 @@ public class DataStore {
     private final YamlConfiguration homesCfg = new YamlConfiguration();
     private final YamlConfiguration warpsCfg = new YamlConfiguration();
 
-    /** 每个玩家的写锁，避免 Folia 多区域线程同时读改写同一文件 | per-player write lock */
-    private final Map<UUID, Object> playerLocks = new ConcurrentHashMap<>();
-
     private final Object homesLock = new Object();
     private final Object warpsLock = new Object();
+
+    /** 内存中的修改是否需要写回磁盘 | whether the in-memory config has unsaved changes */
+    private volatile boolean homesDirty;
+    private volatile boolean warpsDirty;
+    /** 是否已有一个合并写盘任务在排队，避免一次突发排 N 个任务 | one queued flush at a time */
+    private final AtomicBoolean flushQueued = new AtomicBoolean(false);
+
+    /**
+     * 家/传送点写盘的合并延迟（毫秒）：/sethome 之类只改内存，1 秒内的突发合并成一次整文件写。
+     * 用自有守护线程而不是 Bukkit 调度器：插件被禁用时任务会被取消，那时这次修改就只留在内存里直接丢了。
+     */
+    private static final long FLUSH_DELAY_MS = 1000L;
+
+    private static final ScheduledExecutorService FLUSHER = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "NovaTeleport-DataStore");
+        t.setDaemon(true);
+        return t;
+    });
+    /** 有未落盘修改的实例；关服钩子据此同步兜底 | instances with unsaved changes */
+    private static final Set<DataStore> PENDING = ConcurrentHashMap.newKeySet();
+
+    /**
+     * 按数据目录归类的写入锁：同一份文件在同一时刻只能有一个「序列化 + 写临时文件 + 替换」的事务在执行。
+     * 少了它的话，两个线程会同时写同一个 .tmp：A 写完 tmp、B 覆盖 tmp 后先 move，A 再 move 就已经没有 tmp 了，
+     * 结果是 IOException（本次修改直接丢失），甚至 move 到半个文件。
+     * 正常路径上同目录同时只有一个实例（插件重载那一下除外），所以这把锁基本无争用。
+     */
+    private static final Map<String, Object> DIR_LOCKS = new ConcurrentHashMap<>();
+
+    private static Object dirLock(File dataFolder) {
+        String key = dataFolder.getAbsolutePath();
+        return DIR_LOCKS.computeIfAbsent(key, k -> new Object());
+    }
+
+    static {
+        // onDisable 不经过 DataStore，这里注册关服钩子保证内存里的修改最终落盘
+        Runtime.getRuntime().addShutdownHook(new Thread(DataStore::flushAllPending, "NovaTeleport-DataStore-Shutdown"));
+    }
+
+    /**
+     * 每个玩家的写锁。用固定数量的分段锁按 UUID 散列取用，而不是 Map&lt;UUID, Object&gt;：
+     * 后者会为每个见过的 UUID 永久保留一个条目（只增不减），这里条目数恒定。
+     * 不同 UUID 偶尔共用一把锁只是轻微多等一会，不损失正确性。
+     */
+    private static final int LOCK_STRIPES = 64;
+    private final Object[] playerLocks = new Object[LOCK_STRIPES];
+
+    {
+        for (int i = 0; i < LOCK_STRIPES; i++) playerLocks[i] = new Object();
+    }
 
     public DataStore(File pluginDataFolder) {
         this.dataFolder = new File(pluginDataFolder, "data");
@@ -48,6 +100,16 @@ public class DataStore {
         this.warpsFile = new File(dataFolder, "warps.yml");
         this.configFile = new File(pluginDataFolder, "config.yml");
         this.serverNameStamp = configFile.lastModified();
+        // 插件重载（/reload 或 enable-disable）会新建一个 DataStore：先把同目录里尚未落盘的旧实例写下去，
+        // 否则本实例读到旧内容，之后整文件写回时会把旧实例内存里那些修改覆盖掉
+        for (DataStore other : new HashSet<>(PENDING)) {
+            if (other != this && dataFolder.equals(other.dataFolder)) {
+                try {
+                    other.flushNow();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
         try {
             if (!homesFile.exists()) homesFile.createNewFile();
             if (!warpsFile.exists()) warpsFile.createNewFile();
@@ -150,6 +212,84 @@ public class DataStore {
         return deserializeLocation(section.getValues(false));
     }
 
+    // 写盘合并 | write coalescing
+    // =====
+    // 内存态永远是权威，读走内存；磁盘写延后并合并，突发指令只写一次整文件。
+
+    /** 标记需要写盘，并在延迟窗口结束后合并落盘 | mark dirty and coalesce the disk write */
+    private void markDirty() {
+        PENDING.add(this);
+        if (flushQueued.compareAndSet(false, true)) {
+            try {
+                FLUSHER.schedule(this::flushTask, FLUSH_DELAY_MS, TimeUnit.MILLISECONDS);
+            } catch (RejectedExecutionException ignored) {
+                // 已经在关服：保留在 PENDING 里，交给关服钩子同步落盘
+                flushQueued.set(false);
+            }
+        }
+    }
+
+    private void flushTask() {
+        flushQueued.set(false);
+        flushNow();
+        PENDING.remove(this);
+        // 落盘期间又产生了修改：重新排队，别让它只留在内存里
+        if (homesDirty || warpsDirty) markDirty();
+    }
+
+    /**
+     * 把标记为脏的配置序列化并原子写回。
+     * 序列化在各自的配置锁内（此时清脏标志也在锁内），文件 IO 在配置锁外 —— 这样磁盘慢也不会卡住读家的线程。
+     * 但整段序列化+落盘必须放进「每数据目录一把」的 dirLock：
+     *  - 同一个实例上并发触发（关服钩子 + 延迟任务 + 插件重载时的构造器预落盘）不会互相覆盖 .tmp；
+     *  - 也不会出现「A 已写出新内容、B 随后把旧快照盖回去」的写入丢失。
+     * 读路径（getHome/listHomes/...）只拿配置锁，不碰 dirLock，所以不会和写盘互等。
+     */
+    private void flushNow() {
+        synchronized (dirLock(dataFolder)) {
+            String homes = null;
+            String warps = null;
+            synchronized (homesLock) {
+                if (homesDirty) {
+                    homes = homesCfg.saveToString();
+                    homesDirty = false;
+                }
+            }
+            synchronized (warpsLock) {
+                if (warpsDirty) {
+                    warps = warpsCfg.saveToString();
+                    warpsDirty = false;
+                }
+            }
+            writeAtomically(homesFile, homes);
+            writeAtomically(warpsFile, warps);
+        }
+    }
+
+    private void writeAtomically(File target, String dump) {
+        if (dump == null) return;
+        try {
+            File tmp = new File(target.getPath() + ".tmp");
+            Files.writeString(tmp.toPath(), dump);
+            try {
+                Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicUnsupported) {
+                Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            Bukkit.getLogger().warning("[DataStore] Failed to save " + target.getName() + ": " + e.getMessage());
+        }
+    }
+
+    private static void flushAllPending() {
+        for (DataStore store : new HashSet<>(PENDING)) {
+            try {
+                store.flushNow();
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
     // 目标封装：支持跨服 | destination wrapper supports cross-server
     public static class Destination {
         public final String server; public final Location location;
@@ -164,8 +304,9 @@ public class DataStore {
             Map<String, Object> data = serializeLocation(loc);
             data.put("server", getServerName());
             homesCfg.set(uuid.toString() + "." + key, data);
-            atomicSave(homesCfg, homesFile);
+            homesDirty = true;
         }
+        markDirty();
     }
 
     public void delHome(UUID uuid, String name) throws IOException {
@@ -177,8 +318,9 @@ public class DataStore {
                     && homesCfg.getConfigurationSection(uuid.toString()).getKeys(false).isEmpty()) {
                 homesCfg.set(uuid.toString(), null);
             }
-            atomicSave(homesCfg, homesFile);
+            homesDirty = true;
         }
+        markDirty();
     }
 
     public Location getHome(UUID uuid, String name) {
@@ -210,8 +352,9 @@ public class DataStore {
             Map<String, Object> data = serializeLocation(loc);
             data.put("server", getServerName());
             warpsCfg.set(key, data);
-            atomicSave(warpsCfg, warpsFile);
+            warpsDirty = true;
         }
+        markDirty();
     }
 
     public void delWarp(String name) throws IOException {
@@ -219,8 +362,9 @@ public class DataStore {
         if (key == null) return;
         synchronized (warpsLock) {
             warpsCfg.set(key, null);
-            atomicSave(warpsCfg, warpsFile);
+            warpsDirty = true;
         }
+        markDirty();
     }
 
     public Location getWarp(String name) {
@@ -261,7 +405,7 @@ public class DataStore {
     }
 
     private Object lockFor(UUID uuid) {
-        return playerLocks.computeIfAbsent(uuid, k -> new Object());
+        return playerLocks[(uuid.hashCode() & 0x7fffffff) % LOCK_STRIPES];
     }
 
     /** 读改写玩家数据文件 | read-modify-write a player file under its lock */
