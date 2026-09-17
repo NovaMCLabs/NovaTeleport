@@ -49,6 +49,20 @@ public class TeleportLogManager {
     private final Object writeLock = new Object();
     private long dumpSeq = 0;
     private long persistedSeq = -1;
+
+    /**
+     * 异步写盘用的自有守护线程。**不能**用插件的调度器：关服时 onDisable 会
+     * cancelAllTasks()，那时排队中的 dump 会被直接取消而不是执行，记录就丢了
+     * （flushSync 只在 shutdown() 里跑，救不了在中途被取消的那些）。
+     * Own daemon executor, not the plugin scheduler: onDisable cancels queued tasks,
+     * which would silently drop a pending dump.
+     */
+    private static final java.util.concurrent.ExecutorService WRITER =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "NovaTeleport-TeleportLog");
+                t.setDaemon(true);
+                return t;
+            });
     private SchedulerWrapper.ScheduledTask flushTask;
 
     /** 每个玩家保留的最大条数 | max entries kept in memory per player */
@@ -200,8 +214,8 @@ public class TeleportLogManager {
             seq = ++dumpSeq;
         }
 
-        // 文件 IO 交给异步线程
-        plugin.getScheduler().runAsync(() -> persist(dump, seq));
+        // 文件 IO 交给自有写线程；序号保证在途的旧 dump 让位
+        WRITER.execute(() -> persist(dump, seq));
     }
 
     /** 写盘入口：串行化并丢弃比已落盘版本更旧的 dump | serialise writes, stale dumps lose */
