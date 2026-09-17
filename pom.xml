@@ -10,7 +10,6 @@
     <name>NovaTeleport Parent</name>
 
     <modules>
-        <module>Sqlit-Lib</module>
         <module>Common</module>
         <module>ExternalPluginStubs</module>
         <module>Bukkit</module>
