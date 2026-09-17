@@ -19,13 +19,23 @@ public class TeleportUtil {
 
     /**
      * 传送费用支付回调。在传送真正执行前调用；返回 false 表示中止传送。
+     * {@link #CHARGED} / {@link #NOTHING_CHARGED} 用于「成功」时报告实际扣了多少，
+     * 退款据此进行 —— 早先用「扣费前后的余额差」推算，但玩家余额可能被别的插件在同一个
+     * 窗口里改动，那样一次免费传送也会算出一个非零金额，传送随后失败就会倒贴钱给玩家。
      * Payment hook, invoked right before the teleport actually happens.
      * Returning false aborts the teleport (and the implementation is responsible for messaging).
      */
     @FunctionalInterface
     public interface Payment {
-        boolean pay(Player player);
+        /**
+         * @param charged 实际扣除的金额；调用方据此退款。不涉及金钱时返回 {@link #NOTHING_CHARGED}。
+         *                amount actually charged, used for refunds on a later failure.
+         */
+        boolean pay(Player player, double[] charged);
     }
+
+    /** 供 {@link Payment} 回填「本次没有扣钱」| nothing was charged */
+    public static final double NOTHING_CHARGED = 0.0;
 
     /**
      * 使用 economy.costs.&lt;type&gt; 的扣费回调（经济未启用/未安装 Vault 时自动放行）。
@@ -37,7 +47,7 @@ public class TeleportUtil {
      * 从外部无法区分这两种 false，所以这里把流程拆开：此时确定没发过消息，可以安全补发。
      */
     public static Payment economyPayment(StarTeleport plugin, String type) {
-        return player -> {
+        return (player, charged) -> {
             CostModel.Spec spec = CostModel.fromGlobal(plugin, type);
             if (spec == null || spec.isFree()) return true;
             CostModel.Result result = CostModel.preflight(plugin, player, spec);
@@ -45,7 +55,11 @@ public class TeleportUtil {
                 CostModel.notifyDenied(plugin, player, spec, result);
                 return false;
             }
-            if (CostModel.apply(plugin, player, spec, result)) return true;
+            if (CostModel.apply(plugin, player, spec, result)) {
+                // 经济未启用 / 有 bypass 权限时 apply 直接放行、一分没扣，金额如实记 0
+                charged[0] = EconomyUtil.wouldCharge(plugin, player, spec.money()) ? spec.money() : NOTHING_CHARGED;
+                return true;
+            }
             player.sendMessage(plugin.getLang().tr("economy.not_enough",
                     "amount", EconomyUtil.format(spec.money())));
             return false;
@@ -285,15 +299,13 @@ public class TeleportUtil {
             return;
         }
 
-        double charged = 0.0;
-        if (payment != null) {
-            // Payment 只暴露「扣一次」，拿不到金额；用扣费前后的余额差才能知道实际扣了多少
-            double before = EconomyUtil.getBalance(player);
-            if (!payment.pay(player)) {
-                abort(onAbort);
-                return;
-            }
-            charged = Math.max(0.0, before - EconomyUtil.getBalance(player));
+        // 由 payment 自己报告实际扣了多少，而不是用余额差推算：
+        // 玩家余额可能被别的插件在同一窗口里改动，那样免费传送也会算出非零金额，
+        // 传送随后失败就会倒贴钱给玩家。
+        double[] charged = {NOTHING_CHARGED};
+        if (payment != null && !payment.pay(player, charged)) {
+            abort(onAbort);
+            return;
         }
 
         if (plugin.getScriptingManager() != null) plugin.getScriptingManager().callPre(player, target);
@@ -303,7 +315,7 @@ public class TeleportUtil {
             playPrepare(plugin, player, target);
         }
 
-        final double refund = charged;
+        final double refund = charged[0];
         CompletableFuture<Boolean> teleported = teleportRespectingBoat(plugin, player, target);
         if (plugin.getScheduler().isFolia()) {
             // Folia：异步结果即「传送是否真的发生」；回调必须回到玩家所属区域线程才能碰实体/背包 API

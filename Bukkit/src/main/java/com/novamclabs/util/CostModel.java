@@ -285,7 +285,7 @@ public final class CostModel {
 
     /** 包装成 TeleportUtil 的扣费回调。{@code specSupplier} 在每次扣费时求值，以支持配置热重载。 */
     public static TeleportUtil.Payment asPayment(StarTeleport plugin, Supplier<Spec> specSupplier) {
-        return player -> {
+        return (player, charged) -> {
             Spec spec = specSupplier.get();
             if (spec == null || spec.isFree()) return true;
 
@@ -294,7 +294,11 @@ public final class CostModel {
                 notifyDenied(plugin, player, spec, result);
                 return false;
             }
-            return apply(plugin, player, spec, result);
+            if (!apply(plugin, player, spec, result)) return false;
+            // 经济未启用 / 有 bypass 权限时 apply 直接放行、一分没扣，金额如实记 0
+            charged[0] = EconomyUtil.wouldCharge(plugin, player, spec.money())
+                    ? spec.money() : TeleportUtil.NOTHING_CHARGED;
+            return true;
         };
     }
 

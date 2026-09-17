@@ -232,8 +232,15 @@ public class TeleportLogCommand implements CommandExecutor, TabCompleter, Listen
         TeleportUtil.delayedTeleportWithAnimation(plugin, target, from, 0, "rewind",
                 // 传送目标仍是 target，但费用由发起回溯的管理员承担；
                 // 管理员付不起时 checkAndCharge 会通知本人并返回 false，从而中止传送。
-                teleported -> com.novamclabs.util.CostModel.checkAndCharge(plugin, viewer,
-                        com.novamclabs.util.CostModel.fromGlobal(plugin, "rewind")),
+                (teleported, charged) -> {
+                    if (!com.novamclabs.util.CostModel.checkAndCharge(plugin, viewer,
+                            com.novamclabs.util.CostModel.fromGlobal(plugin, "rewind"))) {
+                        return false;
+                    }
+                    // 费用由管理员承担；传送后续失败时退款也要退给他，而不是被回溯的目标
+                    charged[0] = com.novamclabs.util.CostModel.fromGlobal(plugin, "rewind").money();
+                    return true;
+                },
                 () -> {
                     viewer.sendMessage(plugin.getLang().t("tplog.rewind_done"));
                 });

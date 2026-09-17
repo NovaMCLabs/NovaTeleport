@@ -101,6 +101,19 @@ public class EconomyUtil {
         }
     }
 
+    /**
+     * 这次扣费是否真的会动到玩家余额。{@link #charge} 在「经济未启用 / 金额为 0 / 有 bypass 权限 /
+     * 没有提供者」时都会直接返回 true 却不扣款，调用方若要按实际金额退款，必须先问这里。
+     * Whether {@link #charge} would actually withdraw — it returns true without charging when the
+     * economy is off, the amount is 0, the player has the bypass permission, or no provider exists.
+     */
+    public static boolean wouldCharge(StarTeleport plugin, Player player, double amount) {
+        if (amount <= 0) return false;
+        if (!isEnabled(plugin)) return false;
+        if (player.hasPermission(getBypassPermission(plugin))) return false;
+        return hasProvider();
+    }
+
     public static double getBalance(Player player) {
         if (!hasProvider()) return 0.0;
         try {

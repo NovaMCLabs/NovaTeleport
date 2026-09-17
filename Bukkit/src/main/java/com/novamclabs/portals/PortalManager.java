@@ -258,7 +258,7 @@ public class PortalManager implements Listener {
         int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
         // 传送门不做经济扣费，也不因移动取消（进入即传送）
         com.novamclabs.util.TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "portal",
-                player -> true, null);
+                (player, charged) -> true, null);
     }
 
     private double resolveCoord(String v, double fallback) {

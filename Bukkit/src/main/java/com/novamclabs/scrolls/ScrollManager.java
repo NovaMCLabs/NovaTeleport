@@ -111,7 +111,7 @@ public class ScrollManager implements Listener {
                         stack -> isBoundScroll(stack, type, target)))
                 .itemDeniedKey("scroll.invalid_target")
                 .build();
-        com.novamclabs.util.TeleportUtil.Payment check = player -> {
+        com.novamclabs.util.TeleportUtil.Payment check = (player, charged) -> {
             com.novamclabs.util.CostModel.Result result = com.novamclabs.util.CostModel.preflight(plugin, player, spec);
             if (!result.ok()) {
                 com.novamclabs.util.CostModel.notifyDenied(plugin, player, spec, result);

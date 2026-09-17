@@ -309,16 +309,16 @@ public class TollWarpManager {
         final String doneKey;
         if (owner) {
             // 所有者传送同样计入使用次数（与 bypass/免费分支一致）；payment 每次传送只回调一次
-            payment = p -> { incrementUsage(warp); return true; };
+            payment = (p, charged) -> { incrementUsage(warp); return true; };
             doneKey = "toll.teleported_owner";
         } else if (bypass) {
-            payment = p -> { incrementUsage(warp); return true; };
+            payment = (p, charged) -> { incrementUsage(warp); return true; };
             doneKey = "toll.teleported_bypass";
         } else if (price > 0) {
-            payment = p -> payToll(p, warp, price);
+            payment = (p, charged) -> payToll(p, warp, price, charged);
             doneKey = "toll.teleported_toll";
         } else {
-            payment = p -> { incrementUsage(warp); return true; };
+            payment = (p, charged) -> { incrementUsage(warp); return true; };
             doneKey = "toll.teleported_toll";
         }
 
@@ -328,7 +328,7 @@ public class TollWarpManager {
     }
 
     /** 支付传送费用：按比例分给所有者，其余作为服务器收入 | split the price between owner and server */
-    private boolean payToll(Player player, TollWarp warp, double price) {
+    private boolean payToll(Player player, TollWarp warp, double price, double[] charged) {
         // 付费传送点要求经济可用；这与「经济没开就免费」的通用降级不同，是有意为之
         if (!EconomyUtil.isEnabled(plugin) || !EconomyUtil.hasProvider()) {
             player.sendMessage(plugin.getLang().t("economy.not_available"));
@@ -361,6 +361,7 @@ public class TollWarpManager {
                 "name", warp.getName()
             ));
         }
+        charged[0] = price;
         incrementUsage(warp);
         return true;
     }
