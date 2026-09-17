@@ -246,6 +246,11 @@ public class TeleportUtil {
     /**
      * 传送执行体：校验 → 扣费 → 特效 → 传送 → （成功才）记录 → 后处理。
      * 所有校验都在扣费之前；扣费之后传送仍可能被第三方插件拦截，那时退回已扣的金钱。
+     *
+     * 目的地校验（锚点 / 领地）读的是**目标位置**的方块与区块状态。在 Folia 上那必须发生在
+     * 目标所属区域线程，否则就是跨区域访问；领地适配器还可能顺带强制加载目标区块。
+     * 因此校验走 {@link RegionGuardUtil#checkDestination} 异步回传，扣费与后续步骤放在回调里。
+     * 同区域（以及 Spigot/Paper 永远单线程）时 checkDestination 直接同步回调，语义与改动前一致。
      */
     private static void execute(StarTeleport plugin, Player player, Location target, String type, Location from,
                                 Payment payment, Runnable onComplete, Runnable onAbort) {
@@ -261,14 +266,21 @@ public class TeleportUtil {
             return;
         }
 
-        if (SpatialAnchorUtil.isRequired(plugin, type) && !SpatialAnchorUtil.hasAnchor(plugin, target)) {
-            player.sendMessage(plugin.getLang().t("anchor.missing"));
-            abort(onAbort);
-            return;
-        }
+        // 校验通过后才扣费：checkDestination 未通过前不会发生任何扣费
+        RegionGuardUtil.checkDestination(plugin, player, target, type, denial -> {
+            if (denial != RegionGuardUtil.Denial.NONE) {
+                if (player.isOnline()) player.sendMessage(plugin.getLang().t(denial.langKey()));
+                abort(onAbort);
+                return;
+            }
+            runTeleport(plugin, player, target, type, from, payment, onComplete, onAbort);
+        });
+    }
 
-        if (!RegionGuardUtil.canEnter(player, target)) {
-            player.sendMessage(plugin.getLang().t("command.no_permission"));
+    /** 目的地校验通过后的实际传送：扣费 → 特效 → 传送 → 收尾 */
+    private static void runTeleport(StarTeleport plugin, Player player, Location target, String type, Location from,
+                                    Payment payment, Runnable onComplete, Runnable onAbort) {
+        if (!player.isOnline()) {
             abort(onAbort);
             return;
         }
