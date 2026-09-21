@@ -19,7 +19,7 @@ public class TeleportUtil {
 
     /**
      * 传送费用支付回调。在传送真正执行前调用；返回 false 表示中止传送。
-     * {@link #CHARGED} / {@link #NOTHING_CHARGED} 用于「成功」时报告实际扣了多少，
+     * {@link #NOTHING_CHARGED} 用于「成功」时报告实际扣了多少，
      * 退款据此进行 —— 早先用「扣费前后的余额差」推算，但玩家余额可能被别的插件在同一个
      * 窗口里改动，那样一次免费传送也会算出一个非零金额，传送随后失败就会倒贴钱给玩家。
      * Payment hook, invoked right before the teleport actually happens.
@@ -28,10 +28,22 @@ public class TeleportUtil {
     @FunctionalInterface
     public interface Payment {
         /**
-         * @param charged 实际扣除的金额；调用方据此退款。不涉及金钱时返回 {@link #NOTHING_CHARGED}。
+         * @param charged 实际扣除的金额；调用方据此退款。不涉及金钱时写 {@link #NOTHING_CHARGED}。
          *                amount actually charged, used for refunds on a later failure.
          */
         boolean pay(Player player, double[] charged);
+
+        /**
+         * 退款接收者，默认是被传送的玩家（费用通常由他本人支付）。
+         * 费用由他人代付时必须覆写：{@code finish()} 的失败退款只退给这里返回的人，
+         * 退给了没付钱的一方就等于凭空造钱（{@code /tplog rewind} 是唯一这种场景）。
+         * 返回 null 表示「无人可退」，退款会跳过（portal 这种完全不涉钱的入口）。
+         * Who gets a refund when the teleport turns out to be blocked; defaults to the player
+         * being moved. Override when someone else pays, or return null when nobody paid.
+         */
+        default OfflinePlayer refundRecipient(Player player) {
+            return player;
+        }
     }
 
     /** 供 {@link Payment} 回填「本次没有扣钱」| nothing was charged */
@@ -316,22 +328,29 @@ public class TeleportUtil {
         }
 
         final double refund = charged[0];
+        // 谁付的钱就退给谁：/tplog rewind 是管理员代付，退给被传送的目标等于凭空造钱
+        final OfflinePlayer refundTo = payment == null ? null : payment.refundRecipient(player);
         CompletableFuture<Boolean> teleported = teleportRespectingBoat(plugin, player, target);
         if (plugin.getScheduler().isFolia()) {
             // Folia：异步结果即「传送是否真的发生」；回调必须回到玩家所属区域线程才能碰实体/背包 API
             teleported.whenComplete((ok, ex) -> plugin.getScheduler().runAtEntity(player, () ->
-                    finish(plugin, player, target, type, from, refund, ok != null && ok, onComplete, onAbort)));
+                    finish(plugin, player, refundTo, target, type, from, refund, ok != null && ok, onComplete, onAbort)));
             return;
         }
 
-        finish(plugin, player, target, type, from, refund, teleported.getNow(false), onComplete, onAbort);
+        finish(plugin, player, refundTo, target, type, from, refund, teleported.getNow(false), onComplete, onAbort);
     }
 
-    /** 传送结果落定后的收尾：失败退钱并告知；只有确认传送成功才记录冷却/日志并触发 onComplete */
-    private static void finish(StarTeleport plugin, Player player, Location target, String type, Location from,
-                               double refund, boolean success, Runnable onComplete, Runnable onAbort) {
+    /**
+     * 传送结果落定后的收尾：失败退钱并告知；只有确认传送成功才记录冷却/日志并触发 onComplete。
+     *
+     * @param refundTo 失败退款接收者；{@link Payment#refundRecipient} 为 null 时不退款
+     *                 （只有 payment == null 的入口会走到 null，例如 portal 不传 payment 时）
+     */
+    private static void finish(StarTeleport plugin, Player player, OfflinePlayer refundTo, Location target, String type,
+                               Location from, double refund, boolean success, Runnable onComplete, Runnable onAbort) {
         if (!success) {
-            refundMoney(plugin, player, refund);
+            refundMoney(plugin, refundTo, refund);
             if (player.isOnline()) {
                 player.sendMessage(plugin.getLang().t("teleport.cancelled.title"));
             }
@@ -360,8 +379,9 @@ public class TeleportUtil {
     /**
      * 退回扣费。只能退金钱：{@link Payment} 抽象不暴露经验等级/物品成本，
      * 无从得知该退多少，因此含 XP 或物品的传送点在这一步不会回滚（见 CostModel.Spec）。
+     * 退给 {@link Payment#refundRecipient}（默认即被传送的玩家），而不是固定退给被传送者。
      */
-    private static void refundMoney(StarTeleport plugin, Player player, double amount) {
+    private static void refundMoney(StarTeleport plugin, OfflinePlayer player, double amount) {
         if (amount <= 0) return;
         if (!EconomyUtil.deposit(plugin, player, amount)) {
             plugin.getLogger().warning("[Economy] Failed to refund " + amount + " to " + player.getName()

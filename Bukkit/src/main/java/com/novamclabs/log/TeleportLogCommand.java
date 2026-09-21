@@ -232,14 +232,26 @@ public class TeleportLogCommand implements CommandExecutor, TabCompleter, Listen
         TeleportUtil.delayedTeleportWithAnimation(plugin, target, from, 0, "rewind",
                 // 传送目标仍是 target，但费用由发起回溯的管理员承担；
                 // 管理员付不起时 checkAndCharge 会通知本人并返回 false，从而中止传送。
-                (teleported, charged) -> {
-                    if (!com.novamclabs.util.CostModel.checkAndCharge(plugin, viewer,
-                            com.novamclabs.util.CostModel.fromGlobal(plugin, "rewind"))) {
-                        return false;
+                new TeleportUtil.Payment() {
+                    @Override
+                    public boolean pay(Player teleported, double[] charged) {
+                        com.novamclabs.util.CostModel.Spec spec =
+                                com.novamclabs.util.CostModel.fromGlobal(plugin, "rewind");
+                        if (!com.novamclabs.util.CostModel.checkAndCharge(plugin, viewer, spec)) {
+                            return false;
+                        }
+                        // 管理员有 bypass 权限 / 经济未启用时一分没扣，必须如实记 0：
+                        // 否则传送失败会退给他一笔他从未付过的钱
+                        charged[0] = com.novamclabs.util.EconomyUtil.wouldCharge(plugin, viewer, spec.money())
+                                ? spec.money() : TeleportUtil.NOTHING_CHARGED;
+                        return true;
                     }
-                    // 费用由管理员承担；传送后续失败时退款也要退给他，而不是被回溯的目标
-                    charged[0] = com.novamclabs.util.CostModel.fromGlobal(plugin, "rewind").money();
-                    return true;
+
+                    @Override
+                    public org.bukkit.OfflinePlayer refundRecipient(Player teleported) {
+                        // 失败退款退给付费的管理员，而不是被回溯的目标
+                        return viewer;
+                    }
                 },
                 () -> {
                     viewer.sendMessage(plugin.getLang().t("tplog.rewind_done"));

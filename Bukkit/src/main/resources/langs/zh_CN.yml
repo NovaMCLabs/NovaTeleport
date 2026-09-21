@@ -10,7 +10,7 @@ teleport.actionbar.countdown: "§e启明传送中 §7| §f剩余 §a{seconds}§f
 teleport.title.countdown: "§b§l传送中..."
 teleport.subtitle.countdown: "§e{seconds}§f 秒"
 
-anchor.missing: "§c目标地点缺少空间锚点结构，无法传送。"
+anchor.missing: "§c目标地点缺少空间锚点结构，无法传送。§7该传送类型要求落点处已搭建锚点，请先在目标处建好锚点结构。"
 
 debug.enabled: "调试模式已启用 | Debug enabled"
 debug.delay: "传送延迟设置为: {seconds}秒"
@@ -57,6 +57,8 @@ tpa.cross.accepted: "§a已接受请求，正在通知 §e{requester} §a前往�
 tpa.cross.travel: "§e正在将你送往服务器 §a{server} §e..."
 tpa.cross.denied: "§c你的传送请求被 §e{target} §c拒绝。"
 tpa.cross.meet_offline: "§e对方已离线，你只能留在本服的登录点。"
+tpa.cross.unavailable: "§c跨服消息通道当前不可用，已取消切换服务器，未收取任何费用。"
+tpa.cross.fallback_local: "§e跨服消息通道不可用，改为在本服内完成传送。"
 
 homes.limit_reached: "§c你的家数量已达上限 ({limit})。"
 homes.set: "§a已设置家: §e{name}"

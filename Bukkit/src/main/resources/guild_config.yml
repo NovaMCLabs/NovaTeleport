@@ -42,10 +42,6 @@ headquarters:
   # Enable guild headquarters
   enabled: true
   
-  # 据点保护半径（方块）
-  # Protection radius in blocks
-  protection_radius: 50
-  
   # 传送到据点的延迟（秒）
   # Teleport delay to HQ in seconds
   delay: 5
@@ -53,14 +49,3 @@ headquarters:
   # 传送到据点的费用
   # Teleport cost to HQ
   cost: 0.0
-
-# 工会传送权限
-# Guild teleport permissions
-permissions:
-  # 需要权限才能使用工会传送
-  # Require permission to use guild teleport
-  require_permission: true
-  
-  # 基础权限节点
-  # Base permission node
-  base_permission: "novateleport.guild.use"

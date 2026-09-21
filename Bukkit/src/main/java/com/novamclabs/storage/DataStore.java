@@ -169,7 +169,9 @@ public class DataStore {
     public static void atomicSave(YamlConfiguration cfg, File target) throws IOException {
         File parent = target.getParentFile();
         if (parent != null && !parent.exists()) parent.mkdirs();
-        File tmp = new File(target.getPath() + ".tmp");
+        // 临时名必须每次唯一：固定名会让并发写的两个线程互相顶掉对方写了一半的 .tmp，
+        // 后 move 的那个就把半截内容替换成了正式文件（calls here have no dirLock）。
+        File tmp = new File(target.getPath() + "." + UUID.randomUUID() + ".tmp");
         cfg.save(tmp);
         try {
             Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -230,11 +232,23 @@ public class DataStore {
     }
 
     private void flushTask() {
-        flushQueued.set(false);
         flushNow();
+        // 摘 PENDING 必须在「放开闸门」之前，否则关服钩子可能漏掉这一条；
+        // 而放开闸门必须早于这次复查，这样落盘期间发生的修改只有两种归宿：
+        // CAS 成功就自己排了队，CAS 失败就说明它早于这里的 set(false)，本次复查必定看到它的脏标记。
         PENDING.remove(this);
-        // 落盘期间又产生了修改：重新排队，别让它只留在内存里
-        if (homesDirty || warpsDirty) markDirty();
+        flushQueued.set(false);
+        if (isDirty()) markDirty();
+    }
+
+    /** 是否有未落盘的修改。两个字段各自被自己的锁保护，必须分别在锁内读，不能裸读。 */
+    private boolean isDirty() {
+        synchronized (homesLock) {
+            if (homesDirty) return true;
+        }
+        synchronized (warpsLock) {
+            return warpsDirty;
+        }
     }
 
     /**
@@ -261,13 +275,23 @@ public class DataStore {
                     warpsDirty = false;
                 }
             }
-            writeAtomically(homesFile, homes);
-            writeAtomically(warpsFile, warps);
+            // 清脏标记在前、落盘在后：写失败就必须把标记放回去，否则这次修改内存和磁盘一起丢
+            if (!writeAtomically(homesFile, homes)) {
+                synchronized (homesLock) {
+                    homesDirty = true;
+                }
+            }
+            if (!writeAtomically(warpsFile, warps)) {
+                synchronized (warpsLock) {
+                    warpsDirty = true;
+                }
+            }
         }
     }
 
-    private void writeAtomically(File target, String dump) {
-        if (dump == null) return;
+    /** @return 磁盘写入是否成功；false 时调用方必须把对应的脏标记放回 | false means the dirty flag must be restored */
+    private boolean writeAtomically(File target, String dump) {
+        if (dump == null) return true;
         try {
             File tmp = new File(target.getPath() + ".tmp");
             Files.writeString(tmp.toPath(), dump);
@@ -276,8 +300,10 @@ public class DataStore {
             } catch (IOException atomicUnsupported) {
                 Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
+            return true;
         } catch (IOException e) {
             Bukkit.getLogger().warning("[DataStore] Failed to save " + target.getName() + ": " + e.getMessage());
+            return false;
         }
     }
 

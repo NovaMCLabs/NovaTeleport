@@ -29,7 +29,6 @@ worlds:
     enabled: false
 
 # 可配置的禁止降落方块（脚下不能是这些）
-safe_landing_note: "脚下不能为以下方块"
 unsafe_landing_blocks:
   - "LAVA"
   - "WATER"

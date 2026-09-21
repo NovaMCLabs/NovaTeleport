@@ -77,7 +77,6 @@ public final class ParticleCompat {
     }
 
     private static final Map<String, Particle> CACHE = new ConcurrentHashMap<>();
-    private static final Particle MISSING = null;
 
     private ParticleCompat() {
     }
@@ -133,7 +132,7 @@ public final class ParticleCompat {
         try {
             return Particle.valueOf(name);
         } catch (IllegalArgumentException | NullPointerException e) {
-            return MISSING;
+            return null;
         }
     }
 }

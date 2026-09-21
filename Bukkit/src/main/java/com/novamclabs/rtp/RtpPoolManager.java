@@ -63,8 +63,10 @@ public class RtpPoolManager {
                 wc.enabled = ws.getBoolean("enabled", true);
                 wc.centerX = ws.getDouble("center_x", 0);
                 wc.centerZ = ws.getDouble("center_z", 0);
-                wc.minRadius = ws.getInt("min_radius", 500);
-                wc.maxRadius = ws.getInt("max_radius", 5000);
+                // 与 rtp.yml 的出厂值一致：采样只落在已生成区块内，默认半径必须留在
+                // 新世界的已探索范围内，否则 /rtp 会一直报 rtp.no_safe。
+                wc.minRadius = ws.getInt("min_radius", 64);
+                wc.maxRadius = ws.getInt("max_radius", 512);
                 if (wc.maxRadius < wc.minRadius) wc.maxRadius = wc.minRadius;
                 wc.biomeBlacklist = new HashSet<>(ws.getStringList("biome_blacklist"));
                 wc.unsafeBlocks = new HashSet<>(defaultUnsafe);

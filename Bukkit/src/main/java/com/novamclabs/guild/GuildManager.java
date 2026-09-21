@@ -120,18 +120,35 @@ public class GuildManager {
     }
 
     /**
-     * 获取玩家的工会ID
+     * 产出该工会 ID 的适配器。ID 的格式由适配器自己定义（Guilds 是 UUID、SimpleClans 是 tag），
+     * 必须还给它解析 | the adapter that produced the id owns its format
      */
-    public String getGuildId(Player player) {
+    private record GuildRef(GuildAdapter adapter, String id) {
+    }
+
+    /**
+     * 找到第一个能回答「玩家属于哪个工会」的适配器，并记住是哪一个。
+     * 把 Guilds 的 UUID 交给 SimpleClans 的 getClan(String) 必然解析失败，
+     * 因此后续所有按 ID 取数的调用都要走回同一个适配器，不能遍历全部。
+     */
+    private GuildRef resolve(Player player) {
         for (GuildAdapter adapter : adapters) {
             try {
                 String guildId = adapter.getGuildId(player);
-                if (guildId != null) return guildId;
+                if (guildId != null) return new GuildRef(adapter, guildId);
             } catch (Throwable t) {
                 logOnce("getGuildId/" + adapter.name(), t);
             }
         }
         return null;
+    }
+
+    /**
+     * 获取玩家的工会ID
+     */
+    public String getGuildId(Player player) {
+        GuildRef ref = resolve(player);
+        return ref == null ? null : ref.id();
     }
 
     /**
@@ -152,73 +169,61 @@ public class GuildManager {
      * 获取工会所有成员
      */
     public List<UUID> getGuildMembers(Player player) {
-        String guildId = getGuildId(player);
-        if (guildId == null) return new ArrayList<>();
+        GuildRef ref = resolve(player);
+        if (ref == null) return new ArrayList<>();
 
-        for (GuildAdapter adapter : adapters) {
-            try {
-                List<UUID> members = adapter.getGuildMembers(guildId);
-                if (members != null && !members.isEmpty()) return members;
-            } catch (Throwable t) {
-                logOnce("getGuildMembers/" + adapter.name(), t);
-            }
+        try {
+            List<UUID> members = ref.adapter().getGuildMembers(ref.id());
+            return members == null ? new ArrayList<>() : members;
+        } catch (Throwable t) {
+            logOnce("getGuildMembers/" + ref.adapter().name(), t);
+            return new ArrayList<>();
         }
-        return new ArrayList<>();
     }
 
     /**
      * 获取工会名称
      */
     public String getGuildName(Player player) {
-        String guildId = getGuildId(player);
-        if (guildId == null) return null;
+        GuildRef ref = resolve(player);
+        if (ref == null) return null;
 
-        for (GuildAdapter adapter : adapters) {
-            try {
-                String name = adapter.getGuildName(guildId);
-                if (name != null) return name;
-            } catch (Throwable t) {
-                logOnce("getGuildName/" + adapter.name(), t);
-            }
+        try {
+            return ref.adapter().getGuildName(ref.id());
+        } catch (Throwable t) {
+            logOnce("getGuildName/" + ref.adapter().name(), t);
+            return null;
         }
-        return null;
     }
 
     /**
      * 获取工会据点位置
      */
     public Location getGuildHome(Player player) {
-        String guildId = getGuildId(player);
-        if (guildId == null) return null;
+        GuildRef ref = resolve(player);
+        if (ref == null) return null;
 
-        for (GuildAdapter adapter : adapters) {
-            try {
-                Location home = adapter.getGuildHome(guildId);
-                if (home != null) return home;
-            } catch (Throwable t) {
-                logOnce("getGuildHome/" + adapter.name(), t);
-            }
+        try {
+            return ref.adapter().getGuildHome(ref.id());
+        } catch (Throwable t) {
+            logOnce("getGuildHome/" + ref.adapter().name(), t);
+            return null;
         }
-        return null;
     }
 
     /**
      * 设置工会据点
      */
     public boolean setGuildHome(Player player, Location location) {
-        String guildId = getGuildId(player);
-        if (guildId == null) return false;
+        GuildRef ref = resolve(player);
+        if (ref == null) return false;
 
-        for (GuildAdapter adapter : adapters) {
-            try {
-                if (adapter.setGuildHome(guildId, location)) {
-                    return true;
-                }
-            } catch (Throwable t) {
-                logOnce("setGuildHome/" + adapter.name(), t);
-            }
+        try {
+            return ref.adapter().setGuildHome(ref.id(), location);
+        } catch (Throwable t) {
+            logOnce("setGuildHome/" + ref.adapter().name(), t);
+            return false;
         }
-        return false;
     }
 
     /**

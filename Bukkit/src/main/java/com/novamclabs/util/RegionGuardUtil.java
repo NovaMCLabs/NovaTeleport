@@ -95,8 +95,16 @@ public final class RegionGuardUtil {
         }
 
         SchedulerWrapper scheduler = plugin == null ? null : plugin.getScheduler();
+        // 用 isFolia() 判断，而不是 `scheduler instanceof FoliaScheduler`：后者在 Folia 上同样为 false
+        // （工厂在非 Folia 平台就不返回 FoliaScheduler），于是跨区域校验永远落到同步分支、
+        // 在主线程航以外的线程上读目标区块 —— 正是这个类要避免的事。
+        if (scheduler == null || !scheduler.isFolia()) {
+            // 非 Folia（Spigot/Paper 单线程）：旧行为逐字节一致
+            result.accept(check(plugin, player, target, type));
+            return;
+        }
         if (!(scheduler instanceof FoliaScheduler)) {
-            // 非本插件的调度器实现：保持同步语义
+            // Folia 但不是本插件的调度器实现：没有区域线程 API 可用，退回同步校验
             result.accept(check(plugin, player, target, type));
             return;
         }
@@ -113,10 +121,20 @@ public final class RegionGuardUtil {
         Consumer<Denial> once = denial -> {
             if (decided.compareAndSet(false, true)) result.accept(denial);
         };
-        Consumer<Boolean> fallback = ran -> {
-            // 目标区域已卸载/任务被丢弃：退回「在调用方线程上直接校验」，
-            // 与本次改动前的行为一致 —— 宁可按旧语义放行/拒绝，也不要永远不回调导致传送静默消失。
-            if (!ran) once.accept(check(plugin, player, target, type));
+        // 目标区域已卸载/任务被丢弃时**不能**在调用方线程补做校验：调用方在 Folia 上就是玩家
+        // 区域线程，而校验要读目标位置的方块，那就是跨区域访问 —— Folia 抛异常，于是既不回调
+        // 也不 abort，传送和倒计时静默卡住。目标区块都不在了，传送本身也必然失败，
+        // 所以这里按「不做区域检查」放行，并留一条日志说明发生过丢弃。
+        Consumer<Boolean> targetRegionGone = ran -> {
+            if (ran) return;
+            if (DROPPED.compareAndSet(false, true)) {
+                (plugin == null ? java.util.logging.Logger.getLogger("NovaTeleport") : plugin.getLogger())
+                        .warning("[RegionAdapter] Destination region was gone before the teleport check ran at "
+                                + target.getWorld().getName() + " " + target.getBlockX() + ","
+                                + target.getBlockY() + "," + target.getBlockZ()
+                                + " — the region check was skipped for that teleport.");
+            }
+            once.accept(Denial.NONE);
         };
 
         folia.runAtLocationLive(target.getWorld(), target.getBlockX(), target.getBlockY(), target.getBlockZ(), () -> {
@@ -125,10 +143,16 @@ public final class RegionGuardUtil {
             if (folia.isOwnedByCurrentThread(player.getLocation())) {
                 once.accept(denial);
             } else {
-                folia.runAtEntityLive(player, () -> once.accept(denial), fallback);
+                // 回传失败时重复投递同一个结果即可，**不要**再算一次（那会退回跨区域读）
+                folia.runAtEntityLive(player, () -> once.accept(denial), ran -> {
+                    if (!ran) once.accept(denial);
+                });
             }
-        }, fallback);
+        }, targetRegionGone);
     }
+
+    /** 「目标区域提前消失」每个 JVM 只报一次 | report the dropped-destination case once per JVM */
+    private static final AtomicBoolean DROPPED = new AtomicBoolean();
 
     /** 真正的校验，必须在目标所属区域线程上调用 | the real check; must run on the destination's region thread */
     private static Denial check(StarTeleport plugin, Player player, Location target, String type) {

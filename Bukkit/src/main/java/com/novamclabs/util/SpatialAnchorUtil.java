@@ -13,6 +13,17 @@ public final class SpatialAnchorUtil {
     private SpatialAnchorUtil() {
     }
 
+    /**
+     * 该传送类型是否**强制要求**目标处存在锚点结构。
+     *
+     * 注意这里的语义是「必需」而不是「加成」：一旦 {@code spatial_anchors.enabled: true}，
+     * {@code required_types} 里列出的类型在目标落点（脚下方块 y-1 为中心）没有搭出正确结构时
+     * 会被直接拒绝传送（{@link RegionGuardUtil} 返回 {@code ANCHOR_MISSING}）。
+     * 默认值 {@code [guild, towny]} 意味着开启该功能后，公会点/Towny 落点必须**实际搭建**锚点，
+     * 否则那条线路的传送会永久失败 —— 不是「没有加成」，而是「不能用」。
+     * 因此开启前请先确认这些落点都已按 center/edge/corner 三档方块搭好。
+     * Whether the destination *must* carry an anchor structure, not merely benefit from one.
+     */
     public static boolean isRequired(StarTeleport plugin, String type) {
         if (type == null || type.isBlank()) {
             return false;

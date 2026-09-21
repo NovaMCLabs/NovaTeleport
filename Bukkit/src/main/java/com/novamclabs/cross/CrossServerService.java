@@ -74,6 +74,8 @@ public class CrossServerService {
             redis.clients.jedis.JedisPoolConfig poolConfig = new redis.clients.jedis.JedisPoolConfig();
             poolConfig.setMaxTotal(4);
             poolConfig.setMaxIdle(2);
+            // 主线程上的发送会借用连接，池被耗尽时必须立刻失败而不是无限等待
+            poolConfig.setMaxWaitMillis(2000L);
             if (pass == null || pass.isEmpty()) {
                 this.pool = new JedisPool(poolConfig, host, port);
             } else {
@@ -94,7 +96,7 @@ public class CrossServerService {
         }
     }
 
-    /** 周期探活：publish 只在真正发送时才知道 Redis 状态，空闲期间也要能发现掉线 */
+    /** 周期探活：publish 只在自己真正调用时才知道 Redis 状态，空闲期间也要能发现掉线 */
     private void startHealthCheck() {
         if (healthTask != null) healthTask.cancel();
         healthTask = plugin.getScheduler().runTimerAsync(this::pingRedis, 30L, 30L, java.util.concurrent.TimeUnit.SECONDS);
@@ -132,6 +134,12 @@ public class CrossServerService {
                     @Override
                     public void onMessage(String ch, String message) {
                         dispatch(message);
+                    }
+
+                    /** 订阅建立成功：Redis 确实可用。否则 healthy 只有等首次 publish 才知道 */
+                    @Override
+                    public void onSubscribe(String ch, int count) {
+                        setHealthy(true, null);
                     }
                 };
                 this.subscription = sub;
@@ -192,25 +200,33 @@ public class CrossServerService {
     }
 
     /**
-     * 发布一条跨服消息（异步，不阻塞主线程）。
-     * @return 是否已提交发送
+     * 发布一条跨服消息：在调用方线程上同步发送，并把结果如实返回。
+     *
+     * 过去这里直接丢给异步线程并恒返回 true，异步里失败只改 healthy，调用方永远以为发成功了。
+     * 后果最重的是 tpa_accept/tpa_arriving：目标服接受 /tpa 后通知被静默丢弃，对方切服过来却
+     * 没有 arrivals 登记，玩家卡在代理登录点。因此这里改为在调用方（主线程）用已存在的池内
+     * 连接做一次 publish —— 相比一次传送本身的开销很小，换来一个可判定的结果，也没有引入新的
+     * 同步建连。
+     *
+     * @return 消息是否真的发出了（false 时调用方必须改走本地回退并告知玩家）
      */
     public boolean publish(Map<String, String> data) {
         if (!isActive()) return false;
         data.put("server", serverName);
         String payload = toJson(data);
-        final String ch = channel;
-        plugin.getScheduler().runAsync(() -> {
-            JedisPool p = this.pool;
-            if (p == null || p.isClosed()) return;
-            try (Jedis jedis = p.getResource()) {
-                jedis.publish(ch, payload);
-                setHealthy(true, null);
-            } catch (Throwable t) {
-                setHealthy(false, t.getMessage());
-            }
-        });
-        return true;
+        JedisPool p = this.pool;
+        if (p == null || p.isClosed()) {
+            setHealthy(false, "connection pool is closed");
+            return false;
+        }
+        try (Jedis jedis = p.getResource()) {
+            jedis.publish(channel, payload);
+            setHealthy(true, null);
+            return true;
+        } catch (Throwable t) {
+            setHealthy(false, t.getMessage());
+            return false;
+        }
     }
 
     public void close() {

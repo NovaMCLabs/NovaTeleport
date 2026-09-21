@@ -168,15 +168,18 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         Player target = BedrockUtil.findPlayer(args[0]);
         if (target == null) {
             // 目标不在本服：尝试通过 Redis 转发到其所在服务器
-            if (plugin.getCrossServerService() != null && plugin.getCrossServerService().isActive()
-                    && plugin.getCrossServerService().publishTpaRequest(args[0], requester.getName(), here)) {
+            com.novamclabs.cross.CrossServerService cross = plugin.getCrossServerService();
+            if (cross != null && cross.isActive()
+                    && cross.publishTpaRequest(args[0], requester.getName(), here)) {
                 TpaRequest req = new TpaRequest(requester.getUniqueId(), requester.getName(), null, here,
-                        System.currentTimeMillis() + TPA_EXPIRE_MILLIS, true, plugin.getCrossServerService().getServerName());
+                        System.currentTimeMillis() + TPA_EXPIRE_MILLIS, true, cross.getServerName());
                 outgoing.put(requester.getUniqueId(), req);
                 requester.sendMessage(plugin.getLang().tr("tpa.cross.sent", "target", args[0], "seconds", TPA_EXPIRE_MILLIS / 1000));
                 return true;
             }
-            requester.sendMessage(plugin.getLang().t("common.no_online_player"));
+            // 区分「对方真的不在线」与「跨服通道发不出去」：两者对玩家的下一步动作完全不同
+            requester.sendMessage(plugin.getLang().t(cross != null && cross.isActive()
+                    ? "common.no_online_player" : "tpa.cross.unavailable"));
             return true;
         }
         if (target.getUniqueId().equals(requester.getUniqueId())) { requester.sendMessage(plugin.getLang().t("common.cannot_target_self")); return true; }
@@ -232,17 +235,44 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 notice.put("type", "tpa_arriving");
                 notice.put("arriving", target.getName());
                 notice.put("meet", req.requesterName == null ? "" : req.requesterName);
-                if (plugin.getCrossServerService() != null) plugin.getCrossServerService().publish(notice);
+                boolean notified = plugin.getCrossServerService() != null
+                        && plugin.getCrossServerService().publish(notice);
+                if (!notified) {
+                    // 通知发不出去就不能切服：对方服务器不会登记会合，玩家会卡在代理登录点
+                    target.sendMessage(plugin.getLang().t("tpa.cross.unavailable"));
+                    return true;
+                }
                 target.sendMessage(plugin.getLang().tr("tpa.cross.travel", "server", req.requesterServer));
-                com.novamclabs.util.ProxyMessenger.connect(plugin, target, req.requesterServer);
+                if (!com.novamclabs.util.ProxyMessenger.connect(plugin, target, req.requesterServer)) {
+                    // 消息发不出去（代理未连接/通道未注册）时不要登记冷却，玩家并没有离开
+                    target.sendMessage(plugin.getLang().t("tpa.cross.unavailable"));
+                    return true;
+                }
                 recordCrossServerCooldown(target, "tpahere");
             } else {
-                // /tpa：请求方会前来本服，登记到达后要见的目标，并通知请求方所在服务器
-                if (req.requesterName != null && !req.requesterName.isEmpty()) {
-                    arrivals.put(req.requesterName.toLowerCase(Locale.ROOT), new Arrival(target.getUniqueId(), expireAt));
+                // /tpa：请求方会前来本服，登记到达后要见的目标，并通知请求方所在服务器。
+                // 通知发不出去就不能让对方切服（对方不会登记 arrivals，玩家会卡在代理登录点）；
+                // 但目标已接受、请求方就在本服，此时改走本地传送 —— 比切服失败更好的是原地完成。
+                if (notifyRequesterServer("tpa_accept", req, target.getName())) {
+                    if (req.requesterName != null && !req.requesterName.isEmpty()) {
+                        arrivals.put(req.requesterName.toLowerCase(Locale.ROOT), new Arrival(target.getUniqueId(), expireAt));
+                    }
+                    target.sendMessage(plugin.getLang().tr("tpa.cross.accepted", "requester", req.requesterName == null ? "?" : req.requesterName));
+                } else {
+                    Player localRequester = BedrockUtil.findPlayer(req.requesterName);
+                    if (localRequester == null) {
+                        target.sendMessage(plugin.getLang().t("tpa.requester_offline"));
+                        return true;
+                    }
+                    int delay = plugin.getConfig().getInt("commands.teleport_delay_seconds", 3);
+                    SchedulerWrapper.ScheduledTask localTask = TeleportUtil.delayedTeleportWithAnimation(
+                            plugin, localRequester, target.getLocation(), delay, "tpa",
+                            () -> localRequester.sendMessage(plugin.getLang().t("tpa.accepted.complete")));
+                    if (localTask != null) {
+                        localRequester.sendMessage(plugin.getLang().t("tpa.cross.fallback_local"));
+                        target.sendMessage(plugin.getLang().tr("tpa.cross.accepted", "requester", req.requesterName == null ? "?" : req.requesterName));
+                    }
                 }
-                notifyRequesterServer("tpa_accept", req, target.getName());
-                target.sendMessage(plugin.getLang().tr("tpa.cross.accepted", "requester", req.requesterName == null ? "?" : req.requesterName));
             }
             return true;
         }
@@ -264,14 +294,19 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         return true;
     }
 
-    private void notifyRequesterServer(String type, TpaRequest req, String targetName) {
-        if (plugin.getCrossServerService() == null) return;
+    /**
+     * 通知请求方所在服务器：本服已接受。返回 false 表示通知没发出去。
+     * 静默丢弃会让对方切服过来却没人登记 arrivals（卡在代理登录点），
+     * 因此调用方必须据此改走本地传送并告知玩家。
+     */
+    private boolean notifyRequesterServer(String type, TpaRequest req, String targetName) {
+        if (plugin.getCrossServerService() == null) return false;
         Map<String, String> data = new LinkedHashMap<>();
         data.put("type", type);
         data.put("requester", req.requesterName == null ? "" : req.requesterName);
         data.put("target", targetName);
         data.put("here", Boolean.toString(req.here));
-        plugin.getCrossServerService().publish(data);
+        return plugin.getCrossServerService().publish(data);
     }
 
     private boolean handleTpDeny(CommandSender sender) {
@@ -280,7 +315,11 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         TpaRequest req = incoming.remove(target.getUniqueId());
         if (req == null) { target.sendMessage(plugin.getLang().t("tpa.none_pending")); return true; }
         if (req.crossServer) {
-            notifyRequesterServer("tpa_deny", req, target.getName());
+            // 拒绝通知发不出去不影响安全性：对方那条请求最终会自行过期，这里只提示一下
+            if (!notifyRequesterServer("tpa_deny", req, target.getName())) {
+                target.sendMessage(plugin.getLang().t("tpa.cross.unavailable"));
+                return true;
+            }
             target.sendMessage(plugin.getLang().t("tpa.denied.target"));
             return true;
         }
@@ -363,7 +402,10 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
                 if (!ensurePaid(requester, "tpa")) return;
                 outgoing.remove(requester.getUniqueId());
                 requester.sendMessage(plugin.getLang().tr("tpa.cross.travel", "server", targetServer));
-                com.novamclabs.util.ProxyMessenger.connect(plugin, requester, targetServer);
+                if (!com.novamclabs.util.ProxyMessenger.connect(plugin, requester, targetServer)) {
+                    requester.sendMessage(plugin.getLang().t("tpa.cross.unavailable"));
+                    return;
+                }
                 recordCrossServerCooldown(requester, "tpa");
                 break;
             }
@@ -425,9 +467,12 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (isRemoteServer(dest.server)) {
             if (!passesCrossServerGates(p, "home")) return true;
             if (!ensurePaid(p, "home")) return true;
-            com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server);
-            recordCrossServerCooldown(p, "home");
-            p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
+            if (com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server)) {
+                recordCrossServerCooldown(p, "home");
+                p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
+            } else {
+                p.sendMessage(plugin.getLang().t("tpa.cross.unavailable"));
+            }
             return true;
         }
         if (dest.location == null) { p.sendMessage(plugin.getLang().tr("homes.not_found", "name", name)); return true; }
@@ -504,9 +549,12 @@ public class TeleportCommandHandler implements CommandExecutor, TabCompleter, Li
         if (isRemoteServer(dest.server)) {
             if (!passesCrossServerGates(p, "warp")) return true;
             if (!ensurePaid(p, "warp")) return true;
-            com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server);
-            recordCrossServerCooldown(p, "warp");
-            p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
+            if (com.novamclabs.util.ProxyMessenger.connect(plugin, p, dest.server)) {
+                recordCrossServerCooldown(p, "warp");
+                p.sendMessage(plugin.getLang().tr("city.proxy", "server", dest.server));
+            } else {
+                p.sendMessage(plugin.getLang().t("tpa.cross.unavailable"));
+            }
             return true;
         }
         if (dest.location == null) { p.sendMessage(plugin.getLang().tr("warps.not_found", "name", name)); return true; }

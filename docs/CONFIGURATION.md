@@ -13,7 +13,7 @@ All files live under `plugins/NovaTeleport/`.
 | `features_config.yml` | `TownyTeleportManager`, `TeleportLogManager` | Towny teleport, teleport log & rewind |
 | `guild_config.yml` | `GuildManager` | guild HQ / warps / costs / which guild plugins to use |
 | `toll_warps_config.yml` | `TollWarpManager` | toll warp mode, limits, price range, owner fee share |
-| `party.yml` | `PartyManager` | built-in party limits and name prefixes |
+| `party.yml` | `PartyManager` | built-in party limits (name prefixes come from the language file) |
 | `death.yml` | `DeathManager` | death-back cooldown, cost, prompts, auto random respawn |
 | `steles.yml` | `SteleManager` | stele activation cost, travel cost, structure definitions |
 | `portals.yml` | `PortalManager` | custom portal definitions |
@@ -349,12 +349,12 @@ city:
 - `guild_config.yml`
   - `enabled`, `plugins` (allowed adapters: `Guilds`, `SimpleClans`, `FactionsUUID`)
   - `warps.{enabled, max_per_guild, admin_only, delay, cost}`
-  - `headquarters.{enabled, protection_radius, delay, cost}`
-  - `permissions.{require_permission, base_permission}`
+  - `headquarters.{enabled, delay, cost}`
 - `party.yml`
-  - `max_members`, `invite_expire_seconds`, `teleport_delay`,
-    `display.{leader_prefix, member_prefix}` — the built-in party system, used when no
-    Parties/BetterTeams plugin is detected.
+  - `max_members`, `invite_expire_seconds`, `teleport_delay` — the built-in party system, used
+    when no Parties/BetterTeams plugin is detected. The leader/member name prefixes are **not**
+    set here (the keys are shipped commented out): they come from the language file
+    (`party.prefix.leader` / `party.prefix.member`) so they follow `general.language`.
 - `toll_warps_config.yml`
   - `enabled`, `mode` (`toll` | `personal_free`), `max_per_player`,
     `min_price`, `max_price`, `owner_fee_percentage`, `allow_free`, `teleport_delay_seconds`

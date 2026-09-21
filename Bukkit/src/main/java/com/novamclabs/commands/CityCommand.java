@@ -36,12 +36,18 @@ public class CityCommand implements CommandExecutor {
             TeleportUtil.delayedTeleportWithAnimation(plugin, p, dest, delay, "city", () -> p.sendMessage(plugin.getLang().t("teleport.completed")));
             return true;
         } else if ("proxy".equalsIgnoreCase(mode)) {
-            // 跨服分支不走 TeleportUtil，战斗标签与冷却必须在这里单独把关
+            // 跨服分支不走 TeleportUtil，战斗标签、冷却与费用必须在这里单独把关
             if (!com.novamclabs.util.TeleportGates.passes(plugin, p, "city")) return true;
+            if (!com.novamclabs.util.CostModel.checkAndCharge(plugin, p,
+                    com.novamclabs.util.CostModel.fromGlobal(plugin, "city"))) return true;
             String server = plugin.getConfig().getString("city.proxy.server", "hub");
-            com.novamclabs.util.ProxyMessenger.connect(plugin, p, server);
-            com.novamclabs.util.TeleportGates.record(plugin, p, "city");
-            p.sendMessage(plugin.getLang().tr("city.proxy", "server", server));
+            if (com.novamclabs.util.ProxyMessenger.connect(plugin, p, server)) {
+                com.novamclabs.util.TeleportGates.record(plugin, p, "city");
+                p.sendMessage(plugin.getLang().tr("city.proxy", "server", server));
+            } else {
+                // 代理没接住这条消息：不登记冷却，也不能假装已切服
+                p.sendMessage(plugin.getLang().t("tpa.cross.unavailable"));
+            }
             return true;
         }
         return true;

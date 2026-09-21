@@ -10,7 +10,7 @@ teleport.actionbar.countdown: "§eTeleporting §7| §fRemaining §a{seconds}§f 
 teleport.title.countdown: "§b§lTeleporting..."
 teleport.subtitle.countdown: "§e{seconds}§f s"
 
-anchor.missing: "§cSpatial anchor missing at destination."
+anchor.missing: "§cSpatial anchor missing at destination — this teleport type requires an anchor structure to be built there."
 
 debug.enabled: "Debug enabled"
 debug.delay: "Teleport delay: {seconds}s"
@@ -57,6 +57,8 @@ tpa.cross.accepted: "§aRequest accepted — notifying §e{requester} §ato trav
 tpa.cross.travel: "§eSending you to server §a{server} §e..."
 tpa.cross.denied: "§cYour request was denied by §e{target}§c."
 tpa.cross.meet_offline: "§eThey went offline — you will stay at this server's join point."
+tpa.cross.unavailable: "§cCross-server messaging is unavailable right now, so the server switch was cancelled. Nothing was charged."
+tpa.cross.fallback_local: "§eCross-server messaging is unavailable — teleporting you within this server instead."
 
 homes.limit_reached: "§cYou have reached the maximum homes ({limit})."
 homes.set: "§aHome set: §e{name}"
