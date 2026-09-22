@@ -340,8 +340,8 @@ public class DataStore {
         if (key == null) return;
         synchronized (homesLock) {
             homesCfg.set(uuid.toString() + "." + key, null);
-            if (homesCfg.getConfigurationSection(uuid.toString()) != null
-                    && homesCfg.getConfigurationSection(uuid.toString()).getKeys(false).isEmpty()) {
+            // 同上：不能用 getConfigurationSection，内存里的 Map 形态拿不到
+            if (childKeys(homesCfg, uuid.toString()).isEmpty()) {
                 homesCfg.set(uuid.toString(), null);
             }
             homesDirty = true;
@@ -364,10 +364,27 @@ public class DataStore {
 
     public List<String> listHomes(UUID uuid) {
         synchronized (homesLock) {
-            ConfigurationSection sec = homesCfg.getConfigurationSection(uuid.toString());
-            if (sec == null) return Collections.emptyList();
-            return new ArrayList<>(sec.getKeys(false));
+            return childKeys(homesCfg, uuid.toString());
         }
+    }
+
+    /**
+     * 一个节点下的子键。与 {@link #readDestination} 同理：必须同时接受磁盘解析出的
+     * ConfigurationSection 与 {@code set(path, Map)} 直接写进内存的 Map，
+     * 否则刚 /sethome 的家不会出现在列表里（重启后才会）。
+     * Child keys of a node, accepting both disk-loaded sections and in-memory Maps.
+     */
+    private static List<String> childKeys(YamlConfiguration cfg, String path) {
+        Object raw = cfg.get(path);
+        if (raw instanceof ConfigurationSection) {
+            return new ArrayList<>(((ConfigurationSection) raw).getKeys(false));
+        }
+        if (raw instanceof Map) {
+            List<String> keys = new ArrayList<>();
+            for (Object k : ((Map<?, ?>) raw).keySet()) keys.add(String.valueOf(k));
+            return keys;
+        }
+        return Collections.emptyList();
     }
 
     // 传送点 | warps
@@ -412,13 +429,34 @@ public class DataStore {
         }
     }
 
+    /**
+     * 按路径读出目的地。
+     *
+     * 不能用 {@code cfg.getConfigurationSection(path)}：Bukkit 的 YamlConfiguration 只有在
+     * 值来自**磁盘解析**时才把它包成 ConfigurationSection，而 {@link #setHome}/{@link #setWarp}
+     * 是直接 {@code set(path, Map)} 写入的 —— 对这种「刚写进内存的 Map」，
+     * {@code getConfigurationSection} 返回 null，只有 {@code get(path)} 拿得到。
+     * 于是同一会话里 /sethome 之后再 /home 必然报「未找到家」，重启后才恢复正常。
+     * Reads the raw value so both freshly-set Maps and disk-loaded sections work.
+     */
     private Destination readDestination(YamlConfiguration cfg, String path) {
-        ConfigurationSection sec = cfg.getConfigurationSection(path);
-        if (sec == null) return null;
-        Map<String, Object> map = sec.getValues(false);
+        Object raw = cfg.get(path);
+        if (!(raw instanceof ConfigurationSection) && !(raw instanceof Map)) return null;
+        Map<String, Object> map = raw instanceof ConfigurationSection
+                ? ((ConfigurationSection) raw).getValues(false)
+                : flattened(raw);
         Object stored = map.get("server");
         String server = stored != null ? stored.toString() : getServerName();
         return new Destination(server, deserializeLocation(map));
+    }
+
+    /** 把 {@code set(path, Map)} 写进内存的 Map 转成字符串键的副本 */
+    private static Map<String, Object> flattened(Object raw) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> e : ((Map<?, ?>) raw).entrySet()) {
+            out.put(String.valueOf(e.getKey()), e.getValue());
+        }
+        return out;
     }
 
     // ===== 玩家数据 | per-player data =====
